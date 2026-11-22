@@ -161,6 +161,23 @@ fn an_overworld_bed_takes_precedence_over_a_nether_world_spawn() {
 
 #[test]
 #[ignore = "daily"]
+fn a_stored_point_without_a_block_stays_in_the_overworld() {
+    let (mut game, _rx) = server();
+    game.level.world_spawn = Some([0, 64, 0]);
+    game.level.world_spawn_dimension = Some("minecraft:the_nether".into());
+    game.lan.as_mut().unwrap().hub.guests.update(0, |g| {
+        g.spawn = Some([0.5, 64.0, 0.5]);
+    });
+    game.guest_respawn(CONN);
+    assert_eq!(
+        guest(&game).dimension,
+        "minecraft:overworld",
+        "the stored point is the Overworld's"
+    );
+}
+
+#[test]
+#[ignore = "daily"]
 fn a_missing_bed_faces_the_world_spawn_angle() {
     let (mut game, _rx) = server();
     game.options.dedicated = None;

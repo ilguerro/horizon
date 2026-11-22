@@ -210,6 +210,7 @@ horizon-client game::server_travel::respawn_data_tests::a_guest_from_another_lev
 horizon-client game::server_travel::respawn_data_tests::a_missing_bed_faces_the_world_spawn_angle lib daily resources
 horizon-client game::server_travel::respawn_data_tests::a_nether_spawn_search_starts_below_the_roof lib daily resources
 horizon-client game::server_travel::respawn_data_tests::a_respawn_at_the_world_spawn_faces_the_saved_angle lib daily resources
+horizon-client game::server_travel::respawn_data_tests::a_stored_point_without_a_block_stays_in_the_overworld lib daily resources
 horizon-client game::server_travel::respawn_data_tests::a_world_spawn_outside_the_border_respawns_inside_it lib daily resources
 horizon-client game::server_travel::respawn_data_tests::a_world_spawn_set_in_the_nether_respawns_the_guest_there lib daily resources
 horizon-client game::server_travel::respawn_data_tests::an_overworld_bed_takes_precedence_over_a_nether_world_spawn lib daily resources

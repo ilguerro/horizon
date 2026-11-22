@@ -70,7 +70,19 @@ impl Game<'_> {
                 f64::from(c.pos[2]) + 0.5,
             ]
         });
-        let level = own.map_or(world_spawn_dimension, |c| c.dim);
+        // A stored point without a block is the Overworld's (the save keeps
+        // `spawnpoint`'s point there), so the world spawn's level is only for
+        // a player with no point at all.
+        let level = own.map_or_else(
+            || {
+                if host.hub.guests[i].spawn.is_some() {
+                    crate::game::Dim::Overworld
+                } else {
+                    world_spawn_dimension
+                }
+            },
+            |c| c.dim,
+        );
         let spawn = elsewhere.map_or(spawn, |c| {
             [
                 f64::from(c.pos[0]) + 0.5,
