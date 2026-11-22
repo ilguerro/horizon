@@ -3,7 +3,6 @@
 //! absent).
 use super::*;
 use crate::{chunk::BlockState, worldgen::generator::GeneratorData, worldgen::live::LiveFeatures};
-use horizon_core::random::RandomSource;
 use std::{collections::HashMap, path::PathBuf, sync::OnceLock};
 
 struct Fixture {
@@ -830,21 +829,26 @@ fn eyeblossom_state_changes_send_one_trail_particle_of_the_new_colour() {
     let Some(f) = fixture() else { return };
     // `EyeblossomBlock.Type.OPEN` and `CLOSED`'s `particleColor`.
     let (open_color, closed_color) = (16_545_810_u32, 6_250_335_u32);
-    // The four draws the particle takes, from the level random as the test
-    // finds it: `velocity.scale(lifetime)` added to the block's centre.
-    fn expected(level: &Level, centre: [f64; 3]) -> ([f64; 3], i32) {
-        let mut r = level.random.clone();
-        let lifetime = 0.5 + r.next_double();
-        let velocity = [
-            r.next_double() - 0.5,
-            r.next_double() + 1.0,
-            r.next_double() - 0.5,
-        ];
-        (
-            std::array::from_fn(|i| centre[i] + velocity[i] * lifetime),
-            (20.0 * lifetime) as i32,
-        )
-    }
+    // The target and duration `EyeblossomBlock.Type.spawnTransformParticle`
+    // sends for these level seeds: taken from the pinned 26.3 jar, its own
+    // `RandomSource.create(seed)` and `Vec3` at the block's centre, not from
+    // the formulas under test.
+    let (open_target, open_duration) = (
+        [
+            0.806_652_791_887_043_2,
+            66.159_363_459_920_83,
+            0.988_928_599_005_058_9,
+        ],
+        24,
+    );
+    let (closed_target, closed_duration) = (
+        [
+            1.827_759_314_454_496,
+            66.677_501_862_415_44,
+            1.611_892_263_437_135_8,
+        ],
+        24,
+    );
     fn trails(w: &World) -> Vec<(BlockPos, [f64; 3], u32, i32)> {
         w.level
             .events
@@ -866,12 +870,11 @@ fn eyeblossom_state_changes_send_one_trail_particle_of_the_new_colour() {
     let pos = BlockPos::new(0, 64, 0);
     w.put(pos, w.id("closed_eyeblossom", &[]));
     w.level.day = 13000;
-    let (target, duration) = expected(&w.level, [0.5, 64.5, 0.5]);
     f.behaviours.random_tick(&mut w.level, &mut w.ticks, pos);
     assert_eq!(w.name(pos), "minecraft:open_eyeblossom");
     assert_eq!(
         trails(&w),
-        vec![(pos, target, open_color, duration)],
+        vec![(pos, open_target, open_color, open_duration)],
         "the opening flower sends the open type's trail"
     );
     // A potted open flower by day closes: the CLOSED type's colour.
@@ -880,12 +883,11 @@ fn eyeblossom_state_changes_send_one_trail_particle_of_the_new_colour() {
     let pot = BlockPos::new(1, 64, 1);
     w.put(pot, w.id("potted_open_eyeblossom", &[]));
     w.level.day = 6000;
-    let (target, duration) = expected(&w.level, [1.5, 64.5, 1.5]);
     f.behaviours.random_tick(&mut w.level, &mut w.ticks, pot);
     assert_eq!(w.name(pot), "minecraft:potted_closed_eyeblossom");
     assert_eq!(
         trails(&w),
-        vec![(pot, target, closed_color, duration)],
+        vec![(pot, closed_target, closed_color, closed_duration)],
         "the closing pot sends the closed type's trail"
     );
 }
