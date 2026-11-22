@@ -299,3 +299,46 @@ fn ctrl_pick_with_include_data_prints_another_players_profile() {
     assert!(text.contains("Target"), "{text}");
     assert!(text.contains("textures"), "{text}");
 }
+
+#[test]
+#[ignore = "daily"]
+fn a_sitting_camel_first_passenger_cannot_toggle_creative_flight() {
+    let mut game = crate::game::native_machines::tests::server_game();
+    let (client, _server) = Pipe::pair();
+    game.connect_local(client, "FlightTest").unwrap();
+    game.remote.as_mut().unwrap().joined = true;
+    game.remote.as_mut().unwrap().first_passenger = true;
+    game.player = Some(PlayerMotion::new(game.motion, Vec3::new(0.5, 64.0, 0.5)).unwrap());
+    game.player.as_mut().unwrap().may_fly = true;
+    let kind = game.res.mob_types().get("minecraft:camel").unwrap().clone();
+    let mut camel = Mob::new(7, kind, Vec3::new(0.5, 64.0, 0.5), 0.0);
+    camel.set_saddle(Some(ItemStack::new("minecraft:saddle", 1)));
+    game.mobs.clear();
+    game.mobs.push(camel);
+    game.riding = Some(7);
+    assert!(
+        game.jumpable_mount(),
+        "a saddled camel that moves is jumpable"
+    );
+    // `Camel.canJump` is `!refuseToMove() && super.canJump()`: a sitting or
+    // standing-up camel takes no jump, so it is no `jumpableVehicle` either.
+    game.mobs[0].extra.camel_sitting = true;
+    assert!(
+        !game.jumpable_mount(),
+        "a sitting camel refuses to move and cannot jump"
+    );
+    for jump in [true, false, true] {
+        game.remote_ride(
+            Keys {
+                jump,
+                ..Default::default()
+            },
+            0,
+        )
+        .unwrap();
+    }
+    assert!(
+        !game.player.as_ref().unwrap().flying,
+        "no toggle on a mount that refuses to move"
+    );
+}
