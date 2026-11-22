@@ -4181,17 +4181,14 @@ impl Game<'_> {
         !self.entity_in(room)
     }
     /// `EndCrystalItem.useOn`: on obsidian or bedrock with a free cell above
-    /// holding no entity. `Some(false)` is its FAIL, `None` another item's use.
+    /// holding no entity (its FAIL is a `false`).
     pub(super) fn place_end_crystal(
         &mut self,
         hit: &super::Hit,
         stack: &horizon_client::items::ItemStack,
-    ) -> Option<bool> {
-        if &*stack.item != "minecraft:end_crystal" {
-            return None;
-        }
-        if !self.end_crystal_fits(hit) {
-            return Some(false);
+    ) -> bool {
+        if &*stack.item != "minecraft:end_crystal" || !self.end_crystal_fits(hit) {
+            return false;
         }
         let above = [hit.pos[0], hit.pos[1] + 1, hit.pos[2]];
         let (x, y, z) = (
@@ -4231,7 +4228,7 @@ impl Game<'_> {
         // ItemStack.useOn counts the use.
         self.award_stat("used", &stack.item, 1);
         self.swing_arm();
-        Some(true)
+        true
     }
     /// `EndCrystal.kill` (`/kill`): the crystal is removed, without a blast
     /// (`Entity.kill` does not hurt it).

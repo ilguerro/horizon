@@ -137,7 +137,7 @@ fn air_above(game: &Game<'_>) -> bool {
 /// obsidian, so `EndCrystalItem.useOn` is a FAIL. With the item gone the same
 /// click places the crystal.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_dropped_item_in_the_cell_refuses_the_crystal() {
     let mut game = crystal_game("minecraft:obsidian");
     game.dropped.push(item_in_cell());
@@ -168,7 +168,7 @@ fn a_dropped_item_in_the_cell_refuses_the_crystal() {
 /// `Entity.setRemoved` takes a mob out of the level at once, so its box no
 /// longer counts even though its list entry is still there.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_removed_mob_in_the_cell_does_not_refuse_the_crystal() {
     let mut game = crystal_game("minecraft:obsidian");
     let kind = game
@@ -201,7 +201,7 @@ fn a_removed_mob_in_the_cell_does_not_refuse_the_crystal() {
 /// `EndCrystalItem.useOn`'s FAIL on a block that is neither obsidian nor
 /// bedrock ends the click: the off hand's stone is not placed either.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_refused_crystal_ends_the_click_before_the_off_hand() {
     let mut game = crystal_game("minecraft:dirt");
     assert_eq!(
@@ -226,7 +226,7 @@ fn a_refused_crystal_ends_the_click_before_the_off_hand() {
 /// the off hand gets a turn (`Minecraft.startUseItem`): a refused crystal ends
 /// the click there and is not spent, a placed one is.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn the_clicking_client_ends_the_click_where_the_crystal_is_refused() {
     let mut game = client_game("minecraft:obsidian");
     game.dropped.push(item_in_cell());

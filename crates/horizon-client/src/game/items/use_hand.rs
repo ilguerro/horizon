@@ -577,9 +577,9 @@ impl Game<'_> {
         // entity in the cell) ends the click, so the off hand gets no turn.
         if let Some(hit) = block_hit
             && self.may_use_on(hit.pos)
-            && let Some(placed) = self.place_end_crystal(hit, &stack)
+            && &*stack.item == "minecraft:end_crystal"
         {
-            if !placed {
+            if !self.place_end_crystal(hit, &stack) {
                 self.use_failed = true;
             }
             return Ok(true);
