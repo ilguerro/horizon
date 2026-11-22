@@ -4,7 +4,8 @@
 //! player's `ops.json` entry exists, never which level it carries: a level-0
 //! operator hears another operator's command. On an integrated server the
 //! owner is the only operator (`IntegratedServer.getProfilePermissions`),
-//! whatever permission level `Allow Commands` gives the guests.
+//! whatever permission level `Allow Commands` gives the guests, and
+//! splitscreen seats are no `ops.json` entries (`join_split`).
 use crate::game::Game;
 use crate::game::lan::LanSettings;
 use crate::game::lan_actions::GuestCommand;
@@ -259,6 +260,60 @@ fn an_integrated_server_without_commands_tells_no_one() {
     );
     assert!(
         admin_messages(&level_zero_rx).is_empty(),
+        "the command's own source never hears its admin line"
+    );
+}
+
+#[test]
+#[ignore = "daily"]
+fn a_level_zero_splitscreen_seat_hears_no_admin_line() {
+    let mut game = crate::game::native_machines::tests::server_game();
+    // One splitscreen seat runs a level-0 command (`/trigger`) while another
+    // seat, both at the owner's level 0 without commands, listens.
+    host(
+        &mut game,
+        true,
+        3,
+        &[
+            "scoreboard objectives add t trigger",
+            "scoreboard players enable SeatA t",
+        ],
+    );
+    let mut host = game.lan.take().unwrap();
+    let owner = 100 + u128::from(ISSUER);
+    let issuer = 100 + u128::from(LEVEL_ZERO_OP);
+    let listener = 100 + u128::from(BYSTANDER);
+    // IntegratedServer.setWorldAllowCommands(false) and join_split: the owner
+    // and both seats have level-0 `ops` entries, but only the owner's comes
+    // from the world; the seats' entries are no `ops.json` entries, so
+    // `PlayerList.isOp` names neither.
+    host.hub.ops.insert(owner, 0);
+    host.hub.singleplayer_owner = Some(owner);
+    host.hub.ops.extend([(issuer, 0), (listener, 0)]);
+    host.hub.split_players.extend([issuer, listener]);
+    host.hub.config.guest_commands = false;
+    let (issuer_guest, issuer_rx) = guest(LEVEL_ZERO_OP, "SeatA", 0, [8.5, 200.0, 8.5]);
+    let (listener_guest, listener_rx) = guest(BYSTANDER, "SeatB", 0, [9.5, 200.0, 9.5]);
+    host.hub.guests.extend([issuer_guest, listener_guest]);
+    game.lan = Some(host);
+    let ran = game
+        .run_guest_command_told(GuestCommand {
+            conn: LEVEL_ZERO_OP,
+            command: "trigger t set 5".into(),
+            permission: 0,
+            integrated: true,
+            quiet: false,
+        })
+        .expect("the guest is connected")
+        .0;
+    assert!(ran, "a level-0 command runs without command access");
+
+    assert!(
+        admin_messages(&listener_rx).is_empty(),
+        "a level-zero splitscreen seat hears no admin line"
+    );
+    assert!(
+        admin_messages(&issuer_rx).is_empty(),
         "the command's own source never hears its admin line"
     );
 }

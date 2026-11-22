@@ -7,10 +7,16 @@ use horizon_client::lan::hub::Hub;
 /// commands. On an integrated server the owner's level is 4 then and 0
 /// otherwise (`IntegratedServer.getProfilePermissions`,
 /// `setWorldAllowCommands`), so nobody is an operator without commands.
+/// Splitscreen seats are in `ops` for their permission level (`join_split`)
+/// but are no `ops.json` entries: `isOp` does not name them.
 pub(super) fn is_op(hub: &Hub, uuid: u128) -> bool {
-    hub.ops
-        .get(&uuid)
-        .is_some_and(|&level| level > 0 || hub.singleplayer_owner != Some(uuid))
+    if hub.split_players.contains(&uuid) {
+        return false;
+    }
+    if hub.singleplayer_owner == Some(uuid) {
+        return hub.ops.get(&uuid).is_some_and(|&level| level > 0);
+    }
+    hub.ops.contains_key(&uuid)
 }
 
 #[cfg(test)]
