@@ -124,7 +124,7 @@ fn pass(game: &mut Game<'_>, conn: u32, packet: S) {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_riding_player_double_jump_toggles_creative_flight() {
     let mut game = crate::game::native_machines::tests::server_game();
     let (client, _server) = Pipe::pair();
@@ -182,7 +182,7 @@ fn a_riding_player_double_jump_toggles_creative_flight() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_camel_second_passenger_cannot_toggle_creative_flight() {
     let mut game = crate::game::native_machines::tests::server_game();
     let (client, _server) = Pipe::pair();
@@ -226,7 +226,7 @@ impl Hooks for RefuseFlight {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_refused_flight_toggle_keeps_the_servers_flying_speed() {
     crate::game::in_own_process(
         "game::remote_vehicles::creative_flight_tests::a_refused_flight_toggle_keeps_the_servers_flying_speed",
@@ -257,7 +257,7 @@ fn a_refused_flight_toggle_keeps_the_servers_flying_speed_in_own_process() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn ctrl_pick_with_include_data_prints_another_players_profile() {
     let (mut game, rx) = lan_game("flight-profile-test");
     pass(
