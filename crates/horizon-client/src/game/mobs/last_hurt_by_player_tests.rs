@@ -166,7 +166,7 @@ fn summon(game: &mut Game<'_>, kind: &str, at: &str, n: i32, health: f32) {
 /// hit is nobody's kill, while the same death right after the hit is the
 /// player's.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_player_memory_that_ran_out_credits_nobody() {
     let mut game = game();
     // A hit just landed: the lava death is the player's kill.
@@ -207,7 +207,7 @@ fn a_player_memory_that_ran_out_credits_nobody() {
 /// `getKillCredit` names: a villager that burns to death, even just after a
 /// player hit it, was not murdered by that player.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_death_without_a_causing_entity_is_no_murder() {
     let mut game = game();
     summon(&mut game, "villager", "4.5 100 4.5", 3, 20.0);
