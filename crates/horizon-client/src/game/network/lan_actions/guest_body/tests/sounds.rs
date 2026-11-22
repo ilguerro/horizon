@@ -222,7 +222,7 @@ fn at(x: f64) -> [i32; 3] {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_guests_footsteps_and_splash_are_heard_by_the_others_but_not_by_itself() {
     let (mut g, walker, listener) = scene();
     // The first tick settles the guest on the floor.
@@ -298,7 +298,7 @@ fn a_guests_footsteps_and_splash_are_heard_by_the_others_but_not_by_itself() {
 /// its body makes on its own client, so the server's copy must not play it on
 /// that window a second time.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_local_players_step_is_played_once() {
     let (mut g, _walker, listener) = scene_of(LOCAL);
     walk_to(&mut g, 10.5);
@@ -332,7 +332,7 @@ fn a_local_players_step_is_played_once() {
 /// nothing, from the tick the sneak starts (`isShiftKeyDown` comes from a
 /// packet the server handled before the tick).
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_sneaking_players_step_is_silent_from_the_tick_it_starts() {
     let (mut g, _walker, listener) = scene();
     walk_to(&mut g, 10.5);
