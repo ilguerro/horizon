@@ -1,5 +1,6 @@
 # The daily tests of horizon-client: each is #[ignore = "daily"] in its source and runs once a day in the daily run,
 # where it must pass (README.md). Rows: PACKAGE TEST TARGET daily REASON, sorted; tools/ci/move_to_daily.py writes them.
 horizon-client game::lan_actions::guest_body::tests::sounds::a_guests_footsteps_and_splash_are_heard_by_the_others_but_not_by_itself lib daily resources
+horizon-client game::lan_actions::guest_body::tests::sounds::a_guests_step_on_an_overridden_block_is_heard_with_the_mods_sound lib daily resources
 horizon-client game::lan_actions::guest_body::tests::sounds::a_local_players_step_is_played_once lib daily resources
 horizon-client game::lan_actions::guest_body::tests::sounds::a_sneaking_players_step_is_silent_from_the_tick_it_starts lib daily resources

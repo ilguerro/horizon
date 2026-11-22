@@ -423,9 +423,31 @@ impl Game<'_> {
                 // and `Entity.doWaterSplashEffect`: the players around hear them
                 // at the guest's feet, and the guest's own client plays them
                 // itself (`Player.playSound` leaves it out).
-                MotionEvent::Emission { state, muffled, .. } => {
-                    let (name, volume, pitch) = self.res.facts().get(state).sounds.step(muffled);
-                    self.own_sound(conn, &name, volume, pitch);
+                MotionEvent::Emission {
+                    position,
+                    state,
+                    muffled,
+                } => {
+                    // The block's parts answer at the position stepped on, as the
+                    // sender's own client asks (`own_sound_type`, `BlockSoundCause::Step`).
+                    let entity = self
+                        .lan
+                        .as_ref()
+                        .and_then(|host| host.hub.guest(conn))
+                        .map(|g| (g.entity_id as u32, "minecraft:player"));
+                    let sounds = self.block_sound_type(
+                        [position.x, position.y, position.z],
+                        state,
+                        entity,
+                        mod_api::BlockSoundCause::Step,
+                    );
+                    // Player.playStepSound: muffled under the swim sound in water.
+                    let (volume, pitch) = if muffled {
+                        (sounds.volume * 0.05, sounds.pitch * 0.8)
+                    } else {
+                        (sounds.volume * 0.15, sounds.pitch)
+                    };
+                    self.own_sound(conn, &sounds.step, volume, pitch);
                 }
                 MotionEvent::Chime { volume, pitch } => self.own_sound(
                     conn,

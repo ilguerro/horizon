@@ -65,13 +65,23 @@ fn scene_of(
     walker_address: std::net::SocketAddr,
 ) -> (Game<'static>, mpsc::Receiver<Out>, mpsc::Receiver<Out>) {
     let mut g = crate::game::native_machines::tests::server_game();
+    let (walker, listener) = prepare(&mut g, walker_address, "minecraft:stone");
+    (g, walker, listener)
+}
+
+/// `scene`'s two guests and their floor, made of `floor`, on `g`.
+fn prepare(
+    g: &mut Game<'_>,
+    walker_address: std::net::SocketAddr,
+    floor: &str,
+) -> (mpsc::Receiver<Out>, mpsc::Receiver<Out>) {
     g.build_registries();
     g.set_allow_commands(true);
-    let stone = g
+    let floor = g
         .pack
         .assets
         .registry
-        .default_state("minecraft:stone")
+        .default_state(floor)
         .unwrap()
         .0;
     let water = g
@@ -84,7 +94,7 @@ fn scene_of(
     let mut chunk = Chunk::empty(0, 0);
     for x in 0..16 {
         for z in 0..16 {
-            chunk.set(x, FLOOR, z, stone);
+            chunk.set(x, FLOOR, z, floor);
             if x >= WATER {
                 chunk.set(x, FLOOR + 1, z, water);
                 chunk.set(x, FLOOR + 2, z, water);
@@ -140,7 +150,7 @@ fn scene_of(
     hub.guests.push(listener);
     g.sync_tick_chunks();
     g.ticked_entities_through = g.next_entity;
-    (g, walker_rx, listener_rx)
+    (walker_rx, listener_rx)
 }
 
 /// One server tick in which the walker says it moved to `x`, on the ground.
@@ -348,4 +358,34 @@ fn a_sneaking_players_step_is_silent_from_the_tick_it_starts() {
         sounds(&g, &listener).is_empty(),
         "a sneaking walker makes no sound"
     );
+}
+
+/// A mod's step sound on the floor reaches the other players: the forwarded step
+/// asks the block's parts at the position stepped on, with the player as the
+/// entity, as the sender's own client does (`BlockSoundCause::Step`).
+#[test]
+#[ignore = "daily"]
+fn a_guests_step_on_an_overridden_block_is_heard_with_the_mods_sound() {
+    // The fixture's white wool answers `mymod:block.x.*` at volume 2.0 and pitch
+    // 1.5, to a player only.
+    mod_platform::__private::part_tests::sound_type_game_thread();
+    crate::entry::install_client_hooks();
+    crate::game::native_entity_refs::tests::with_game(|g| {
+        let remote = "127.0.0.1:25565".parse().unwrap();
+        let (_walker, listener) = prepare(g, remote, "minecraft:white_wool");
+        walk_to(g, 10.5);
+        walk_to(g, 11.5);
+        walk_to(g, 12.5);
+        assert_eq!(
+            sounds(g, &listener),
+            vec![Heard {
+                name: "mymod:block.x.step".to_owned(),
+                source: PLAYERS,
+                volume: 0.3,
+                pitch: 1.5,
+                at: at(12.5),
+            }],
+            "the other player hears the mod's step at the walker's feet"
+        );
+    });
 }
