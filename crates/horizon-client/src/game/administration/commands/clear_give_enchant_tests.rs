@@ -270,3 +270,89 @@ fn clear_empties_the_menu_grid_and_tells_the_player() {
         "the emptied result slot and cursor are what the menu shows"
     );
 }
+
+#[test]
+fn clear_uses_the_inventory_grid_not_an_open_table() {
+    let Some(mut game) = game() else { return };
+    let log = ItemStack::new("minecraft:oak_log", 1);
+    // The inventory menu's 2x2 grid is the one `inventoryMenu.getCraftSlots()`
+    // returns, so its log goes.
+    game.craft_size = 2;
+    game.craft_grid[0] = Some(log.clone());
+    assert!(ran(&mut game, "clear @s minecraft:oak_log"));
+    assert_eq!(game.craft_grid[0], None);
+    // With a crafting table open the 3x3 grid shares `craft_grid`: the first
+    // four cells are table slots, not the inventory menu's 2x2, and are neither
+    // counted nor cleared.
+    game.craft_size = 3;
+    game.craft_grid[0] = Some(log.clone());
+    game.inventory[0] = Some(ItemStack::new("minecraft:oak_log", 2));
+    assert!(ran(&mut game, "clear @s minecraft:oak_log 0"));
+    assert_eq!(game.craft_grid[0], Some(log.clone()));
+    assert!(ran(&mut game, "clear @s minecraft:oak_log"));
+    assert_eq!(game.inventory[0], None);
+    assert_eq!(game.craft_grid[0], Some(log));
+    assert!(
+        !ran(&mut game, "clear @s minecraft:oak_log 0"),
+        "the table's log is not counted"
+    );
+}
+
+#[test]
+fn clear_broadcasts_the_mods_craft_result() {
+    let Some(mut game) = game() else { return };
+    let rx = hosted(&mut game);
+    {
+        game.lan
+            .as_mut()
+            .unwrap()
+            .hub
+            .update_guest(2, |g| {
+                // No recipe takes the empty grid: the mods prepare the result.
+                g.inventory[0] = Some(ItemStack::new("minecraft:stone", 1));
+            })
+            .unwrap();
+    }
+    struct Prepare;
+    #[mod_api::__subscriptions]
+    impl mod_api::Hooks for Prepare {
+        fn prepare_item_craft(
+            &self,
+            _: &mut dyn mod_api::ServerHost,
+            _: &mut mod_api::PrepareItemCraftEvent<'_>,
+        ) -> Option<mod_api::ItemStack> {
+            mod_api::ItemStack::new(mod_api::__private::item_key("minecraft:diamond")?, 1)
+        }
+    }
+    let mods: mod_api::Mods =
+        vec![mod_api::ModEntry::new("clear_prepare", Box::new(Prepare))].into();
+    crate::game::api_values::resolve_item_registry(game.items()).unwrap();
+    mod_platform::testing::with_mods(mods, || {
+        assert!(game.run_guest_command(GuestCommand {
+            conn: 2,
+            command: "clear @s minecraft:stone".into(),
+            permission: 2,
+            integrated: false,
+            quiet: false,
+        }));
+    });
+    let g = game.lan.as_ref().unwrap().hub.guest(2).unwrap();
+    assert_eq!(g.inventory[0], None);
+    // The menu engine made nothing; the mod's hook supplies the result before
+    // the guest's result slot keeps it.
+    assert_eq!(
+        g.craft_result.as_ref().map(|s| &*s.item),
+        Some("minecraft:diamond")
+    );
+    let host = game.lan.as_mut().unwrap();
+    let diamond = host.hub.item_id(&Arc::from("minecraft:diamond"));
+    host.hub.send_inventory(0);
+    assert!(
+        packets(&rx).iter().any(|p| matches!(
+            p,
+            C::ContainerSetContent(play::ContainerSetContent { container: 0, items, .. })
+                if items[0].as_ref().is_some_and(|s| s.item == diamond)
+        )),
+        "the menu shows the mod's result"
+    );
+}

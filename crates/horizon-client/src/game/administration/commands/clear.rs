@@ -39,9 +39,23 @@ impl Game<'_> {
                     std::mem::swap(&mut body.craft_grid[k], &mut grid[k]);
                 }
             }
+            // `inventoryMenu.getCraftSlots()` is the 2x2 inventory grid; an
+            // open crafting table's 3x3 is a different menu. The body's grid
+            // is the guest's 2x2 here, else only when the inventory menu is
+            // the open one.
+            let table_grid = (grid.is_none() && body.craft_size != 2).then(|| {
+                let mut saved: [Option<ItemStack>; 4] = Default::default();
+                for k in 0..4 {
+                    saved[k] = body.craft_grid[k].take();
+                }
+                saved
+            });
             let was = body.carried.clone();
             let n = body.clear_matching(predicate, max);
             let now = body.carried.clone();
+            if let Some(saved) = table_grid {
+                body.craft_grid[..4].clone_from_slice(&saved);
+            }
             if let Some(grid) = grid.as_mut() {
                 for k in 0..4 {
                     std::mem::swap(&mut body.craft_grid[k], &mut grid[k]);
@@ -86,6 +100,17 @@ impl Game<'_> {
         }) else {
             return;
         };
+        let (uuid, name) = {
+            let Some(host) = self.lan.as_ref() else {
+                return;
+            };
+            let g = &host.hub.guests[gi];
+            (g.uuid, g.name.clone())
+        };
+        // The menu engine's result goes through `PrepareItemCraft` before the
+        // guest's result slot keeps it, as a click's does.
+        let mut result = result;
+        self.native_prepare_item_craft(uuid, &name, None, &mut result);
         let Some(host) = self.lan.as_mut() else {
             return;
         };
