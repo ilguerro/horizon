@@ -1,0 +1,3 @@
+# A closed shulker box and the short suffocating blocks (arismoko/horizon#16644): prepared block resources.
+horizon-client game::player_suffocation_tests::a_closed_shulker_box_and_the_short_suffocating_blocks_suffocate_a_player lib daily resources
+horizon-client game::player_suffocation_tests::an_open_shulker_box_does_not_suffocate_a_player lib daily resources

@@ -23,7 +23,7 @@ fn standing_player(
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_closed_shulker_box_and_the_short_suffocating_blocks_suffocate_a_player() {
     let mut game = server_game();
     let registry = game.pack.assets.registry;
@@ -82,7 +82,7 @@ fn a_closed_shulker_box_and_the_short_suffocating_blocks_suffocate_a_player() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn an_open_shulker_box_does_not_suffocate_a_player() {
     let mut game = server_game();
     let registry = game.pack.assets.registry;
