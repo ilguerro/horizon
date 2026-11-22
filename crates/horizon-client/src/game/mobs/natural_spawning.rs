@@ -90,6 +90,18 @@ impl SpawnScratch {
     /// `ChunkMap.move` and `updatePlayerStatus`, in the order they are listed,
     /// then `runAllUpdates` works the queue off (`getNaturalSpawnChunkCount`
     /// flushes it the same way).
+    ///
+    /// The counter's only reader is `collect`, which calls this first, so a
+    /// section change reaches the counter at the next pass that runs. Ticks
+    /// that run no pass at all leave nothing unread either: a frozen tick
+    /// feeds it at the next unfrozen pass, with the section it left, and the
+    /// two that never pass again, a debug world (`tickChunks` does nothing)
+    /// and the entity ids exhausted (nothing spawns until the world reopens),
+    /// have no spawning pass left to read it. Vanilla moves the counter on
+    /// every movement packet where Horizon keeps one position per player per
+    /// tick, so a player's several moves in one tick reach it as the last one,
+    /// and two players' moves in one tick in the level's order rather than the
+    /// packet order (both left as is, see #16223).
     fn track(&mut self, players: &[LevelPlayer]) {
         for p in players {
             let (x, z) = Self::chunk(p);
@@ -1308,6 +1320,8 @@ impl<'a> Game<'a> {
     /// joins before that tick's spawns, with the lower entity ids. Nothing spawns once the
     /// entity ids are exhausted (`entity_ids_exhausted`).
     pub(super) fn tick_spawners(&mut self) {
+        // The counter is left alone here: no entity spawns until the world reopens, so no later
+        // pass reads it (`SpawnScratch::track`).
         if self.entity_ids_exhausted() {
             return;
         }
