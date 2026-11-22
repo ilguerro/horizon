@@ -1195,8 +1195,9 @@ impl Mob {
         let volume = 0.1 + intensity * 1.2;
         if !self.silent {
             let at = [self.position.x, self.position.y, self.position.z];
-            events.push(MobEvent::Sound(
+            events.push(MobEvent::SourcedSound(
                 "block.amethyst_block.chime",
+                self.sound_source(),
                 at,
                 volume,
                 pitch,

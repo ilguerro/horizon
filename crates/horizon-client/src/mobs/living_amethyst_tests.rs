@@ -5,12 +5,13 @@
 use super::*;
 use crate::mobs::world::with_built_test_world;
 use horizon_core::random::{EntityRandom, LegacyRandom};
+use mod_api::SoundSource;
 use std::sync::Arc;
 
-/// A sheep at (0.5, 1, 0.5) standing on the block at (0, 0, 0), its own random
-/// from a fixed seed.
-fn sheep(types: &crate::mobs::MobTypes, silent: bool) -> Mob {
-    let kind = Arc::new(types.types["minecraft:sheep"].clone());
+/// A mob of `kind` at (0.5, 1, 0.5) standing on the block at (0, 0, 0), its
+/// own random from a fixed seed.
+fn mob(types: &crate::mobs::MobTypes, kind: &str, silent: bool) -> Mob {
+    let kind = Arc::new(types.types[kind].clone());
     let mut m = Mob::with_random(
         1,
         kind,
@@ -25,12 +26,20 @@ fn sheep(types: &crate::mobs::MobTypes, silent: bool) -> Mob {
     m
 }
 
-/// The sounds one step posted, as `(event, position, volume, pitch)`.
-fn sounds(events: &[MobEvent]) -> Vec<(&'static str, [f64; 3], f32, f32)> {
+fn sheep(types: &crate::mobs::MobTypes, silent: bool) -> Mob {
+    mob(types, "minecraft:sheep", silent)
+}
+
+/// The sounds one step posted, as `(event, source, position, volume, pitch)`;
+/// a plain `Sound` has no source of its own.
+fn sounds(events: &[MobEvent]) -> Vec<(&'static str, Option<SoundSource>, [f64; 3], f32, f32)> {
     events
         .iter()
         .filter_map(|e| match e {
-            MobEvent::Sound(event, at, volume, pitch) => Some((*event, *at, *volume, *pitch)),
+            MobEvent::Sound(event, at, volume, pitch) => Some((*event, None, *at, *volume, *pitch)),
+            MobEvent::SourcedSound(event, source, at, volume, pitch) => {
+                Some((*event, Some(*source), *at, *volume, *pitch))
+            }
             _ => None,
         })
         .collect()
@@ -78,7 +87,7 @@ fn a_mob_stepping_on_amethyst_chimes_once_every_20_ticks() {
             let mut events = Vec::new();
             m.movement_emission(w, Vec3::new(2.0, 0.0, 0.0), &mut events);
             let heard = sounds(&events);
-            let footfall = ("entity.sheep.step", [0.5, 1.0, 0.5], 0.15, 1.0);
+            let footfall = ("entity.sheep.step", None, [0.5, 1.0, 0.5], 0.15, 1.0);
             if tick >= last + 20 {
                 let (swell, pitch, volume) = chime(intensity, tick - last, draws.next_float());
                 intensity = swell;
@@ -88,7 +97,13 @@ fn a_mob_stepping_on_amethyst_chimes_once_every_20_ticks() {
                     heard,
                     vec![
                         footfall,
-                        ("block.amethyst_block.chime", [0.5, 1.0, 0.5], volume, pitch)
+                        (
+                            "block.amethyst_block.chime",
+                            Some(SoundSource::Neutral),
+                            [0.5, 1.0, 0.5],
+                            volume,
+                            pitch
+                        )
                     ],
                     "tick {tick}: the footfall, then the chime at the mob's feet"
                 );
@@ -105,6 +120,39 @@ fn a_mob_stepping_on_amethyst_chimes_once_every_20_ticks() {
     });
     // Without the vanilla data under .local/horizon-client the world cannot be
     // built: the test has nothing to check.
+    let _ = ran;
+}
+
+/// The chime carries the mob's own source, not the event's block category: a
+/// sheep chimes neutral and a zombie hostile.
+#[test]
+fn a_chime_carries_the_mobs_sound_source() {
+    let build = |world: &mut crate::world::World,
+                 registry: &horizon_world::registry::BlockRegistry| {
+        world
+            .chunks
+            .insert((0, 0), Arc::new(crate::chunk::Chunk::empty(0, 0)));
+        let id = registry.default_state("minecraft:amethyst_block").unwrap();
+        world.set(0, 0, 0, id).unwrap();
+    };
+    let ran = with_built_test_world(&[], build, |w, types| {
+        for (kind, source) in [
+            ("minecraft:sheep", SoundSource::Neutral),
+            ("minecraft:zombie", SoundSource::Hostile),
+        ] {
+            let mut m = mob(types, kind, false);
+            m.age = 20;
+            m.ai.steps.move_dist = 1.0;
+            m.ai.steps.next_step = 1.0;
+            let mut events = Vec::new();
+            m.movement_emission(w, Vec3::new(2.0, 0.0, 0.0), &mut events);
+            let chime = sounds(&events)
+                .into_iter()
+                .find(|s| s.0 == "block.amethyst_block.chime")
+                .unwrap_or_else(|| panic!("{kind}: a chime"));
+            assert_eq!(chime.1, Some(source), "{kind}");
+        }
+    });
     let _ = ran;
 }
 

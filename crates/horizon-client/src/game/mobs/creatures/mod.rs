@@ -2317,6 +2317,13 @@ impl Game<'_> {
                 MobEvent::Sound(name, at, volume, pitch) => {
                     self.audio.play(&full_id(name), Some(at), volume, pitch)
                 }
+                MobEvent::SourcedSound(name, source, at, volume, pitch) => self.audio.play_on(
+                    source.index(),
+                    &full_id(name),
+                    Some(at),
+                    volume,
+                    pitch,
+                ),
                 MobEvent::ProfessionWorkSound(name, at, volume, pitch) => {
                     self.audio.play(&name, Some(at), volume, pitch)
                 }
@@ -8887,6 +8894,13 @@ mod local_sound_event_tests {
             MobEvent::Sound("entity.cow.hurt", [1.0, 100.0, 2.0], 0.5, 1.0),
             MobEvent::LocalSound("entity.breeze.whirl", [3.0, 100.0, 4.0], 0.8, 0.7),
             MobEvent::Sound("entity.zombie.hurt", [5.0, 100.0, 6.0], 1.0, 0.9),
+            MobEvent::SourcedSound(
+                "block.amethyst_block.chime",
+                mod_api::SoundSource::Neutral,
+                [7.0, 100.0, 8.0],
+                0.5,
+                1.2,
+            ),
         ])
         .unwrap();
         // A positive LocalSound must still take the playback path. An absent
@@ -8900,8 +8914,14 @@ mod local_sound_event_tests {
             game.audio.heard.get("minecraft:entity.zombie.hurt"),
             Some(&1)
         );
+        assert_eq!(
+            game.audio
+                .heard
+                .get("minecraft:block.amethyst_block.chime"),
+            Some(&1)
+        );
         let shared = game.audio.capture.as_ref().unwrap();
-        assert_eq!(shared.len(), 2, "LocalSound must not become a shared sound");
+        assert_eq!(shared.len(), 3, "LocalSound must not become a shared sound");
         assert_eq!(shared[0].event, "minecraft:entity.cow.hurt");
         assert_eq!(shared[1].event, "minecraft:entity.zombie.hurt");
         assert_eq!(
@@ -8921,6 +8941,16 @@ mod local_sound_event_tests {
                 shared[1].source
             ),
             ([5.0, 100.0, 6.0], 1.0, 0.9, 5)
+        );
+        assert_eq!(shared[2].event, "minecraft:block.amethyst_block.chime");
+        assert_eq!(
+            (
+                shared[2].position,
+                shared[2].volume,
+                shared[2].pitch,
+                shared[2].source
+            ),
+            ([7.0, 100.0, 8.0], 0.5, 1.2, 6)
         );
     }
 }
