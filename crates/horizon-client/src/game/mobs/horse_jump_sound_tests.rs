@@ -166,7 +166,7 @@ fn jump_sounds(game: &Game<'_>, rx: &mpsc::Receiver<Out>) -> Vec<(f32, f32)> {
 /// Holding the jump bar and letting it go: the horse rears and plays its jump
 /// sound once, from `handleStartJump`'s `playJumpSound`.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_guests_riding_jump_plays_the_jump_sound_once() {
     let (mut game, rx) = game();
     for _ in 0..10 {

@@ -45,6 +45,7 @@ horizon-client game::fishing::impact::tests::misses_water_and_the_closed_gate_em
 horizon-client game::fishing::impact::tests::removing_a_bobber_in_its_impact_clears_the_line_without_rewards lib daily resources
 horizon-client game::gui_clips::dispatch_tests::a_hook_call_clips_what_its_mod_draws_and_closes_what_it_leaves_open lib daily resources
 horizon-client game::gui_entity::tests::a_screen_draws_a_mob_by_type_once_and_refuses_what_it_cant_draw lib daily game-boot
+horizon-client game::horse_jump_sound_tests::a_guests_riding_jump_plays_the_jump_sound_once lib daily resources
 horizon-client game::item_entities::orb_pickup_tests::a_player_picks_a_random_orb_not_the_first lib daily resources
 horizon-client game::lan_actions::pickup_xp_tests::a_guest_picks_an_orb_with_their_own_random lib daily resources
 horizon-client game::lan_entities::tests::glowing_display_metadata_reaches_the_model_silhouettes lib daily resources
