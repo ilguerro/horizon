@@ -42,8 +42,9 @@ import time
 from pathlib import Path
 
 try:
-    from . import lab
+    from . import fast_bins, lab
 except ImportError:
+    import fast_bins
     import lab
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,17 +57,18 @@ POSITIONAL = {
     'goto': ['x', 'y', 'z'], 'break': ['x', 'y', 'z'], 'place': ['x', 'y', 'z'], 'block': ['x', 'y', 'z'],
     'find_block': ['block', 'radius'], 'entities': ['radius', 'type'], 'click_slot': ['slot'],
     'click_button': ['label'], 'type': ['text'], 'wait': ['ticks'], 'wait_ready': ['seconds'],
-    'command': ['command'], 'look_at_block': ['x', 'y', 'z'], 'click': ['id'], 'set': ['id', 'value'],
+    'command': ['command'], 'look_at_block': ['x', 'y', 'z', 'face'], 'click': ['id'], 'set': ['id', 'value'],
     'give': ['item', 'count'], 'options_get': ['keys'], 'options_set': ['key', 'value'],
     'record_start': ['name'], 'record_replay': ['name'], 'repro_export': ['name', 'path'],
-    'turn': ['dyaw', 'dpitch'], 'interact': ['x', 'y', 'z'],
+    'turn': ['dyaw', 'dpitch'], 'interact': ['x', 'y', 'z', 'face'],
     'wait_for': ['condition', 'value'], 'open': ['world', 'seed', 'mode'], 'select': ['slot'],
     'summon': ['kind', 'x', 'y', 'z'], 'interact_entity': ['id'], 'effect': ['id', 'seconds', 'amplifier'],
-    'xp': ['levels'], 'options': ['page'], 'lan': ['action'], 'world_backup': ['folder'],
+    'xp': ['levels'], 'options': ['page'], 'lan': ['action', 'port'], 'world_backup': ['folder'],
     'world_rename': ['folder', 'name'], 'world_delete': ['folder'], 'mouse': ['button', 'action'],
 }
 # Booleans the game takes as bare words.
-BARE = {'click_slot': ['right', 'shift'], 'click': ['right', 'middle', 'shift'], 'summon': ['baby']}
+BARE = {'click_slot': ['right', 'shift'], 'click': ['right', 'middle', 'shift'], 'summon': ['baby'],
+        'lan': ['commands', 'force']}
 
 
 class Failed(Exception):
@@ -106,11 +108,14 @@ class Cli:
         cmd = tool.replace('_', '-')
         positional = [str(args.pop(k)) for k in POSITIONAL.get(tool, []) if k in args]
         options = []
+        # commands.rs declares flag names with hyphens (no-world, in-place, keep-world); Python
+        # kwargs use underscores, so translate them before building --flag words. A boolean flag
+        # is a bare `--flag`; the BARE names are positional bool opts and stay bare words.
         for k, v in args.items():
             if v is True:
-                options.append(k if k in BARE.get(tool, []) else '--' + k)
+                options.append(k if k in BARE.get(tool, []) else '--' + k.replace('_', '-'))
             elif v is not False and v is not None:
-                options += ['--' + k, str(v)]
+                options += ['--' + k.replace('_', '-'), str(v)]
         # Options first: free text (type, command) runs to the end of the line.
         words = [cmd] + (options + positional if tool in ('type', 'command') else positional + options)
         if tool == 'screenshot':
@@ -919,6 +924,30 @@ def suggestions_scenario(d, out):
     return {'completions': len(cases)}
 
 
+def lan_scenario(d, out):
+    d('open', world='Lan', seed=7, mode='creative')
+    d('wait_for', condition='loaded', timeout=400)
+    assert d('lan', action='status')['open'] is False
+    port = None
+    for explicit in (False, True):
+        for commands, force in ((False, False), (True, False), (False, True), (True, True)):
+            port_args = {'port': port} if explicit else {}
+            reply = d('lan', action='open', commands=commands, force=force, **port_args)
+            try:
+                assert reply['ok'] is True and 0 < reply['port'] <= 65535, reply
+                if explicit:
+                    assert reply['port'] == port, reply
+                status = d('lan', action='status')
+                assert status['open'] is True and status['port'] == reply['port'], status
+                assert status['guest_commands'] is commands, status
+                assert status['force_game_mode'] is force, status
+                port = reply['port']
+            finally:
+                d('lan', action='close')
+            assert d('lan', action='status')['open'] is False
+    return {'configurations': 8}
+
+
 def manage_scenario(d, out):
     # The commands that close the audit's gaps: status (F3), entities by right-click, effects and xp,
     # LAN status, options pages by name, then from the title screen the worlds list, Make Backup,
@@ -989,7 +1018,7 @@ def pause_save_scenario(d, out):
 
 SCENARIOS = {'survival': scenario, 'ui': ui_scenario, 'options': options_scenario, 'events': events_scenario,
              'consume': consume_scenario, 'copper-chest': copper_chest_scenario, 'use-screen': use_screen_scenario, 'pick': pick_scenario,
-             'suggestions': suggestions_scenario, 'manage': manage_scenario, 'pause-save': pause_save_scenario,
+             'suggestions': suggestions_scenario, 'lan': lan_scenario, 'manage': manage_scenario, 'pause-save': pause_save_scenario,
              'repro': repro_scenario}
 
 
@@ -1003,8 +1032,10 @@ def scratch(mode, resources):
     (work / '.local/horizon-client').mkdir()
     lab.link_dir(resources, work / '.local/horizon-client' / lab.VERSION)
     # A first launch shows the accessibility onboarding before the title (Gui.addInitialScreens): these
-    # scenarios start at the title, as a player does after it.
-    (work / 'options.txt').write_text('onboardAccessibility:false\n')
+    # scenarios start at the title, as a player does after it. The ui scenario clicks the English ids
+    # docs/agent-control.md shows, and an id is a slug of the drawn (translated) label: pin the
+    # language instead of relying on the default.
+    (work / 'options.txt').write_text('onboardAccessibility:false\nlang:en_us\n')
     # horizon-ctl reads No AI in the game home: this one, not the player's.
     env = game_env(os.environ.get('VSCREEN', 'agent-control'), home=work)
     return work, env
@@ -1024,7 +1055,7 @@ def no_ai_check(mode, ctl, resources):
                 reply = json.loads(r.stdout.strip().splitlines()[-1])
                 log(mode, words, reply)
                 assert r.returncode == 4 and reply == {'error': REFUSAL, 'kind': 'denied'}, (r.returncode, reply)
-            client = ctl.with_name('horizon-client')
+            client = lab.binary(ctl.parent, 'horizon-client')
             args = [str(client), '--control-socket', str(socket), '--world', 'NoAi', '--world-frames', '30']
             if sys.platform == 'darwin' or os.environ.get('HORIZON_E2E_HEADLESS'):
                 args.append('--offscreen')
@@ -1066,7 +1097,7 @@ def setting_check(mode, ctl, out, resources):
     socket = work / 'c.sock'
     env['HORIZON_CONTROL'] = str(socket)  # the default endpoint, this home's
     (work / 'horizon-extras.txt').write_text('agentControl:true\n')
-    args = [str(ctl.with_name('horizon-client'))]
+    args = [str(lab.binary(ctl.parent, 'horizon-client'))]
     if sys.platform == 'darwin':
         args.append('--offscreen')
     game = subprocess.Popen(args, cwd=work, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1135,7 +1166,8 @@ def run(mode, ctl, out, resources, which='survival'):
         summary = SCENARIOS[which](driver, out)
         print(f'[{mode}] PASS in {time.time() - started:.0f} s: {summary}')
         return True
-    except (Failed, AssertionError, StopIteration) as e:
+    except (Failed, AssertionError, StopIteration, json.JSONDecodeError, IndexError,
+            subprocess.TimeoutExpired) as e:
         print(f'[{mode}] FAIL: {e!r}')
         log_file = socket.with_suffix('.log')
         if log_file.exists():
@@ -1143,12 +1175,19 @@ def run(mode, ctl, out, resources, which='survival'):
         return False
     finally:
         try:
-            driver('quit')
-        except Exception:
-            pass
-        driver.close()
-        time.sleep(2)
-        shutil.rmtree(work, ignore_errors=True)
+            try:
+                driver('quit')
+            except Exception:
+                pass
+            try:
+                driver.close()
+            except Exception:
+                pass
+        finally:
+            # Cleanup must run even if a shutdown call raises, and a shutdown failure must not
+            # replace the scenario's result (Mcp.close can raise TimeoutExpired on stdin EOF).
+            time.sleep(2)
+            shutil.rmtree(work, ignore_errors=True)
 
 
 def main():
@@ -1161,7 +1200,7 @@ def main():
     if args.bin_dir:
         bins = Path(args.bin_dir).resolve()
     else:
-        subprocess.run(['cargo', 'build', '--locked', '--profile', 'fast', '-p', 'horizon-game', '-p', 'horizon-client-lib', '--bins'],
+        subprocess.run(fast_bins.command('horizon-client', 'horizon-ctl'),
                        cwd=ROOT, check=True)
         meta = json.loads(subprocess.run(['cargo', 'metadata', '--format-version', '1', '--no-deps'], cwd=ROOT,
                                          capture_output=True, text=True, check=True).stdout)
@@ -1173,7 +1212,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     modes = ['cli', 'mcp'] if args.mode == 'both' else [args.mode]
     scenarios = [*SCENARIOS, 'no-ai', 'setting'] if args.scenario == 'all' else [args.scenario]
-    results = {f'{m}/{s}': run(m, bins / 'horizon-ctl', out, resources, s) for m in modes for s in scenarios}
+    results = {f'{m}/{s}': run(m, lab.binary(bins, 'horizon-ctl'), out, resources, s) for m in modes for s in scenarios}
     print(json.dumps(results))
     sys.exit(0 if all(results.values()) else 1)
 

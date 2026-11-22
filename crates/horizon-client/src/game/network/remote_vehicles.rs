@@ -61,8 +61,8 @@ impl Game<'_> {
                 .is_some_and(|(_, d, _)| self.before_block(d))
     }
 
-    /// The nearest boat, minecart, item frame, armor stand or painting the
-    /// view hits within reach; also End crystals when attacking, and fence knots when using.
+    /// The nearest pickable non-mob object within reach; also End crystals when attacking,
+    /// and fence knots when using.
     pub(super) fn remote_object_hit(&self, attacking: bool) -> Option<ObjectHit> {
         let (eye, dir) = self.aim()?;
         let at = |d: f64| {
@@ -105,6 +105,10 @@ impl Game<'_> {
         if let Some((i, d)) = self.cart_hit() {
             let p = self.carts[i].position;
             hits.push((self.carts[i].id as i32, d, [p.x, p.y, p.z]));
+        }
+        if let Some((tnt, distance)) = self.primed_tnt_hit(self.entity_reach) {
+            let p = tnt.position;
+            hits.push((tnt.id as i32, distance, [p.x, p.y, p.z]));
         }
         // Interaction.isPickable: an invisible box the server clicks through
         // to its scripts, for both uses and attacks.
@@ -730,9 +734,12 @@ mod tests {
         use horizon_client::{items::ItemStack, motion::PlayerMotion};
         use horizon_protocol::connection::Pipe;
         let root = std::path::PathBuf::from(std::env::var_os("HORIZON_TEST_RESOURCES").unwrap());
-        let reference = std::env::var_os("HORIZON_MOUNT_CONTROL_REFERENCE").unwrap();
-        let rows: Vec<serde_json::Value> =
-            serde_json::from_slice(&std::fs::read(reference).unwrap()).unwrap();
+        // The harness supplies a fresh oracle result; ordinary ignored-test runs use
+        // the same 26.3 oracle's recorded cases.
+        let reference = std::env::var_os("HORIZON_MOUNT_CONTROL_REFERENCE")
+            .map(|path| std::fs::read(path).unwrap())
+            .unwrap_or_else(|| include_bytes!("mount_control_reference.json").to_vec());
+        let rows: Vec<serde_json::Value> = serde_json::from_slice(&reference).unwrap();
         assert_eq!(rows.len(), 32, "missing vanilla control cases");
         let settings = Settings::default();
         let loaded = load_resources(
