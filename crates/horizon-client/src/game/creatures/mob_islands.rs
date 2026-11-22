@@ -2212,7 +2212,7 @@ mod tests {
     /// Expected: the 26.3 server's values (`potions/cloud_dose_order_tests.rs`). The first cloud's
     /// dose tick runs serially, so verify checks every other tick and not that one.
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    #[ignore = "needs the upstream-parallel-mobs feature and prepared resources"]
     fn cloud_doses_keep_the_join_order_on_islands() {
         struct Reset;
         impl Drop for Reset {

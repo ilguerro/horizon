@@ -90,6 +90,14 @@
   {
     "package": "horizon-client",
     "target": "lib",
+    "test": "game::creatures::mob_islands::tests::cloud_doses_keep_the_join_order_on_islands",
+    "path": "crates/horizon-client/src/game/creatures/mob_islands.rs",
+    "reason": "needs the upstream-parallel-mobs feature and prepared resources",
+    "rationale": "Compiled only with the upstream-parallel-mobs feature, which no daily shard builds; explicit manual runner by-hand in tools/ci/ignored-tests/manual-horizon-client-parallel-mobs.txt. Not selected by daily shards."
+  },
+  {
+    "package": "horizon-client",
+    "target": "lib",
     "test": "game::creatures::mob_islands::tests::foreign_lookup_observes_serial_visibility_and_unwind",
     "path": "crates/horizon-client/src/game/creatures/mob_islands.rs",
     "reason": "needs the upstream-parallel-mobs feature and prepared resources",

@@ -1,0 +1,3 @@
+horizon-client game::potions::cloud_dose_order_tests::a_cloud_doses_each_mob_in_the_order_they_joined lib daily resources
+horizon-client game::potions::cloud_dose_order_tests::a_lethal_tail_dose_dies_in_the_same_tick lib daily resources
+horizon-client game::potions::cloud_dose_order_tests::a_resumed_pass_keeps_the_cloud_doses_in_join_order lib daily resources

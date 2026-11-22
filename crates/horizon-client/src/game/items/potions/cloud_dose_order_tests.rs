@@ -12,12 +12,16 @@ use horizon_core::position::ChunkPos;
 use std::sync::Arc;
 
 fn with_game(test: impl FnOnce(&mut Game<'_>)) {
-    let (Some(root), Some(home)) = (
-        std::env::var_os("HORIZON_TEST_RESOURCES"),
-        std::env::var_os("HORIZON_HOME"),
-    ) else {
+    let root = std::env::var_os("HORIZON_TEST_RESOURCES");
+    let home = std::env::var_os("HORIZON_HOME");
+    if root.is_none() && home.is_none() {
+        // Neither is set: the test is selected but nothing was provided for it.
         return;
-    };
+    }
+    // The daily run sets both; someone selecting this test by hand must too, and a
+    // half-set pair fails instead of passing without a tick or an assertion.
+    let root = root.expect("HORIZON_TEST_RESOURCES is not set: this test needs prepared resources");
+    let home = home.expect("HORIZON_HOME is not set: this test needs a scratch game home");
     let root = std::path::PathBuf::from(root);
     let settings = Settings::default();
     let loaded = load_resources(
@@ -84,7 +88,7 @@ fn pig(game: &Game<'_>, n: i32) -> Option<(i32, i32, f32)> {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES and a scratch HORIZON_HOME"]
+#[ignore = "daily"]
 fn a_cloud_doses_each_mob_in_the_order_they_joined() {
     with_game(|game| {
         let summon_pig = |game: &mut Game<'_>, n: i32, (x, z): (f64, f64)| {
@@ -133,5 +137,91 @@ fn a_cloud_doses_each_mob_in_the_order_they_joined() {
             Some((99, 9, 7.0)),
         ];
         assert_eq!(got, want, "pigs 1-6 after the dose tick (the fifth)");
+    });
+}
+
+/// A pass that pauses keeps the clouds' doses in join order afterwards: a fox that finishes
+/// its food on the dose tick pauses the pass before the cloud's slot, and the pig after the
+/// cloud still counts its dose down in its own turn. Without the rebuilt list's boundary the
+/// pig ticks before its dose and reads 100/10 instead of 99/9.
+#[test]
+#[ignore = "daily"]
+fn a_resumed_pass_keeps_the_cloud_doses_in_join_order() {
+    with_game(|game| {
+        let summon_pig = |game: &mut Game<'_>, n: i32| {
+            let command = format!(
+                "summon minecraft:pig 2.5 100 8.5 {{UUID:[I;0,12183,0,{n}],NoAI:1b,Silent:1b}}"
+            );
+            assert!(game.run_command(&command), "{command}");
+        };
+        // The fox joins first and finishes its food on the dose tick, pausing the pass.
+        assert!(
+            game.run_command(
+                "summon minecraft:fox 12.5 100 2.5 {UUID:[I;0,12183,9,1],Silent:1b}"
+            ),
+            "the fox"
+        );
+        summon_pig(game, 1);
+        let cloud = format!("summon minecraft:area_effect_cloud 2.5 100 8.5 {CLOUD}");
+        assert!(game.run_command(&cloud), "{cloud}");
+        summon_pig(game, 2);
+        let fox = |game: &Game<'_>| {
+            game.mobs
+                .iter()
+                .position(|m| game.persist.uuid_of(m.id) == Some([0, 12183, 9, 1]))
+                .unwrap()
+        };
+        // The first tick settles the fox; it stands still, on the floor, and has not started
+        // eating yet.
+        game.tick_world(true).unwrap();
+        let at = fox(game);
+        game.mobs[at].velocity = Vec3::ZERO;
+        game.mobs[at].on_ground = true;
+        game.mobs[at].ai.goals = Default::default();
+        game.mobs[at].ai.targets = Default::default();
+        game.mobs[at]
+            .extra
+            .set_main_hand(Some("minecraft:sweet_berries".into()));
+        for _ in 0..3 {
+            game.tick_world(true).unwrap();
+        }
+        // The fifth tick: the fox eats its food and the cloud doses, in one pass.
+        let at = fox(game);
+        game.mobs[at].extra.ints[1] = 600;
+        game.tick_world(true).unwrap();
+        assert_eq!(pig(game, 1), Some((100, 10, 7.0)), "the pig before the cloud");
+        assert_eq!(
+            pig(game, 2),
+            Some((99, 9, 7.0)),
+            "the pig after the cloud, after the pause"
+        );
+    });
+}
+
+/// A cloud that joined after every mob doses after the loop, and a lethal dose still dies in
+/// that tick, as one inside the loop does: its death is enqueued for the same creature pass.
+#[test]
+#[ignore = "daily"]
+fn a_lethal_tail_dose_dies_in_the_same_tick() {
+    with_game(|game| {
+        let pig = "summon minecraft:pig 2.5 100 8.5 \
+            {UUID:[I;0,12183,0,1],NoAI:1b,Silent:1b,Health:1.0f}";
+        assert!(game.run_command(pig), "{pig}");
+        let cloud = "summon minecraft:area_effect_cloud 2.5 100 8.5 {Radius:1.5f,WaitTime:0,\
+            Duration:200,potion_contents:{custom_effects:[{id:\"minecraft:instant_damage\"}]}}";
+        assert!(game.run_command(cloud), "{cloud}");
+        for _ in 0..5 {
+            game.tick_world(true).unwrap();
+        }
+        let at = game
+            .mobs
+            .iter()
+            .position(|m| game.persist.uuid_of(m.id) == Some([0, 12183, 0, 1]))
+            .expect("the pig is there");
+        assert!(!game.mobs[at].alive(), "the tail dose killed the pig");
+        assert!(
+            game.died.contains(&game.mobs[at].id),
+            "its death is enqueued in the dose's tick"
+        );
     });
 }
