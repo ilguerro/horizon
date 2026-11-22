@@ -140,9 +140,9 @@ horizon-client game::native_passages::tests::a_destination_level_must_be_open_an
 horizon-client game::native_passages::tests::a_passage_into_another_level_is_not_sent_to_the_clients lib daily resources
 horizon-client game::native_player_ender_chest_tests::a_write_while_the_local_ender_chest_is_open_survives_closing_it lib daily resources
 horizon-client game::native_player_ender_chest_tests::a_written_slot_is_what_the_open_ender_chest_menu_shows_and_clicks lib daily resources
+horizon-client game::native_player_ender_chest_tests::an_ender_chest_open_is_heard_and_a_chest_open_is_not lib daily resources
 horizon-client game::native_player_ender_chest_tests::each_ender_chest_refusal_has_its_own_name_and_writes_nothing lib daily resources
 horizon-client game::native_player_ender_chest_tests::ender_chest_slots_are_read_and_written lib daily resources
-horizon-client game::native_player_ender_chest_tests::an_ender_chest_open_is_heard_and_a_chest_open_is_not lib daily resources
 horizon-client game::native_player_inventory_tests::a_written_slot_is_what_the_open_inventory_menu_shows_and_clicks lib daily resources
 horizon-client game::native_player_inventory_tests::data_write_aborts lib daily resources
 horizon-client game::native_player_inventory_tests::each_inventory_refusal_has_its_own_name_and_writes_nothing lib daily resources
@@ -206,6 +206,13 @@ horizon-client game::server_travel::changed_dimension_tests::a_command_teleport_
 horizon-client game::server_travel::changed_dimension_tests::a_nether_portal_trip_is_heard_once_on_every_server lib daily resources
 horizon-client game::server_travel::changed_dimension_tests::an_end_gateway_jump_within_the_level_is_not_heard_on_any_server lib daily resources
 horizon-client game::server_travel::credits_respawn_tests::the_credits_respawn_waits_for_the_client_to_load lib daily resources
+horizon-client game::server_travel::respawn_data_tests::a_guest_from_another_level_uses_the_destination_border lib daily resources
+horizon-client game::server_travel::respawn_data_tests::a_missing_bed_faces_the_world_spawn_angle lib daily resources
+horizon-client game::server_travel::respawn_data_tests::a_nether_spawn_search_starts_below_the_roof lib daily resources
+horizon-client game::server_travel::respawn_data_tests::a_respawn_at_the_world_spawn_faces_the_saved_angle lib daily resources
+horizon-client game::server_travel::respawn_data_tests::a_world_spawn_outside_the_border_respawns_inside_it lib daily resources
+horizon-client game::server_travel::respawn_data_tests::a_world_spawn_set_in_the_nether_respawns_the_guest_there lib daily resources
+horizon-client game::server_travel::respawn_data_tests::an_overworld_bed_takes_precedence_over_a_nether_world_spawn lib daily resources
 horizon-client game::split::players::tests::offline_guests_join_only_local_servers lib daily network
 horizon-client game::stats::phantom_spawn_tests::no_phantoms_under_a_roof_the_sky_light_does_not_reach lib daily game-boot
 horizon-client game::stats::phantom_spawn_tests::phantoms_spawn_under_a_glass_roof lib daily game-boot

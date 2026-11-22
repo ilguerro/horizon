@@ -89,7 +89,7 @@ fn guest<'a, 'b>(game: &'a Game<'b>) -> &'a Guest {
 
 /// `TeleportTransition.createDefault`: the respawn data's yaw and pitch.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_respawn_at_the_world_spawn_faces_the_saved_angle() {
     let (mut game, _rx) = server();
     game.level.world_spawn = Some([0, 64, 0]);
@@ -111,7 +111,7 @@ fn a_respawn_at_the_world_spawn_faces_the_saved_angle() {
 
 /// `findRespawnDimension`: the world spawn's own level.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_world_spawn_set_in_the_nether_respawns_the_guest_there() {
     let (mut game, _rx) = server();
     game.level.world_spawn = None;
@@ -131,7 +131,7 @@ fn a_world_spawn_set_in_the_nether_respawns_the_guest_there() {
 /// `Level.getWorldBorderAdjustedRespawnData`: a spawn outside the border
 /// respawns at the border's centre, not at its own column.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_world_spawn_outside_the_border_respawns_inside_it() {
     let (mut game, _rx) = server();
     game.level.world_spawn = Some([0, 64, 0]);
@@ -146,7 +146,7 @@ fn a_world_spawn_outside_the_border_respawns_inside_it() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn an_overworld_bed_takes_precedence_over_a_nether_world_spawn() {
     let (mut game, _rx) = server();
     game.options.dedicated = None;
@@ -160,7 +160,7 @@ fn an_overworld_bed_takes_precedence_over_a_nether_world_spawn() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_missing_bed_faces_the_world_spawn_angle() {
     let (mut game, _rx) = server();
     game.options.dedicated = None;
@@ -176,7 +176,7 @@ fn a_missing_bed_faces_the_world_spawn_angle() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_nether_spawn_search_starts_below_the_roof() {
     let (mut game, _rx) = server();
     game.enter_level(Dim::Nether).unwrap();
@@ -192,7 +192,7 @@ fn a_nether_spawn_search_starts_below_the_roof() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_guest_from_another_level_uses_the_destination_border() {
     let (mut game, _rx) = server();
     game.level.world_spawn = Some([0, 64, 0]);
