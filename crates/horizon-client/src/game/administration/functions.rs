@@ -714,10 +714,20 @@ impl Game<'_> {
             return Err(failure(&key, &a));
         }
         // `CallFunction.execute` queues the body one frame deeper with no depth
-        // limit: only the command quota (`ExecutionContext.runCommandQueue`)
-        // stops a recursion. The call nests on the native stack, so the thread
-        // that runs commands reserves the guest stack (`horizon-guest-stack`),
-        // which holds far more frames than the default command quota needs.
+        // limit; vanilla only stops it at the command quota
+        // (`ExecutionContext.runCommandQueue`). Here each call is a native
+        // frame, so `max_command_sequence_length` (up to `i32::MAX`) alone
+        // could overflow the guest stack. One level (`run_function`,
+        // `execute_line`, `run_chain` and the `function` command) measured
+        // about 9.7 KiB in a debug build; at a 16 KiB budget the guest stack
+        // holds 8192 levels. A deeper call returns `NoReturn` and its body does
+        // not run.
+        const FUNCTION_CALL_STACK_BYTES: usize = 16 * 1024;
+        const MAX_FUNCTION_DEPTH: usize =
+            horizon_guest_stack::GUEST_STACK_BYTES / FUNCTION_CALL_STACK_BYTES;
+        if self.exec.functions.len() >= MAX_FUNCTION_DEPTH {
+            return Ok(Outcome::NoReturn);
+        }
         self.exec.functions.push(f.id.clone());
         let outer = self.exec.returned.take();
         let level = std::mem::replace(&mut self.ui.registries.permission, self.fns.command_level());

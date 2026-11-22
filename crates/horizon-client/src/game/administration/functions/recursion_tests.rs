@@ -39,10 +39,9 @@ fn game() -> Game<'static> {
 
 #[test]
 #[ignore = "daily"]
-fn a_deep_recursion_runs_to_its_end_and_a_runaway_one_ends_at_the_quota() {
+fn a_deep_recursion_runs_to_its_end_and_a_runaway_one_ends_at_the_quota_or_the_native_bound() {
     // The call nests on the native stack, which the thread that runs commands
-    // reserves guest-sized; libtest's own thread is far too small for the
-    // quota's frames.
+    // reserves guest-sized; libtest's own thread is far too small for it.
     horizon_guest_stack::run_on_guest_stack(deep_recursion);
 }
 
@@ -67,9 +66,18 @@ fn deep_recursion() {
         "t:runaway",
         &["scoreboard players add #r t 1", "function t:runaway"],
     );
+    // A quota below the native bound still stops the recursion.
+    run(&mut game, "gamerule max_command_sequence_length 4000");
+    run(&mut game, "function t:runaway");
+    assert_eq!(score(&game, "#r"), Some(2000));
+
+    // A quota above it stops at the native bound instead: 128 MiB of guest
+    // stack at the 16 KiB per-level budget. Without that bound this reaches
+    // 10000 (safe here), and the default 65536 would overflow the stack.
+    run(&mut game, "scoreboard players set #r t 0");
     run(&mut game, "gamerule max_command_sequence_length 20000");
     run(&mut game, "function t:runaway");
-    assert_eq!(score(&game, "#r"), Some(10000));
+    assert_eq!(score(&game, "#r"), Some(8192));
 }
 
 #[test]
