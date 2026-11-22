@@ -38,7 +38,7 @@ fn game() -> Game<'static> {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_deep_recursion_runs_to_its_end_and_a_runaway_one_ends_at_the_quota() {
     // The call nests on the native stack, which the thread that runs commands
     // reserves guest-sized; libtest's own thread is far too small for the
@@ -73,7 +73,7 @@ fn deep_recursion() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_function_tag_condition_stops_at_its_first_return() {
     let mut game = game();
     add_function(&mut game, "t:first", &["return 1"]);
