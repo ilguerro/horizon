@@ -488,11 +488,16 @@ impl Mob {
             6
         }
     }
-    /// `SwingState.startIfAble`: a swing past the first half of the current
-    /// one restarts it.
+    /// `SwingState.startIfAble`: a swing inside the first half of the current
+    /// one is refused. `swing_time` counts one behind `SwingState.ticks` (a
+    /// swing starts at -1 and `tick_swing` counts it up at the end of the
+    /// mob's tick, where vanilla's `SwingState.tick` runs at the start of
+    /// `baseTick`), so vanilla's `ticks > 0 && ticks <= durationTicks / 2` is
+    /// `swing_time >= 0 && swing_time < durationTicks / 2`.
     fn start_swing(&mut self, animation: SwingAnimation, duration: i32) -> bool {
         let half = self.swing_duration() / 2;
-        if self.ai.swinging && self.ai.swing_time >= 0 && self.ai.swing_time < half {
+        let ticks = self.ai.swing_time + 1;
+        if self.ai.swinging && ticks > 0 && ticks <= half {
             return false;
         }
         self.ai.swing_time = -1;

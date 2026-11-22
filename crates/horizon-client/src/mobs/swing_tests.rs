@@ -3,7 +3,7 @@
 //! `getModifiedSwingDuration` says (haste, conduit power, mining fatigue), and
 //! `SwingState.startIfAble` refuses a swing asked for inside the first half of
 //! the current one, `/swing` included.
-use crate::first_person::SwingAnimation;
+use crate::first_person::{Hand, SwingAnimation, SwingState};
 use crate::items::ItemStack;
 use crate::mobs::ai::tick_swing;
 use crate::mobs::{Mob, Species};
@@ -75,33 +75,68 @@ fn haste_and_mining_fatigue_change_the_swing_length() {
     );
 }
 
-/// `SwingState.startIfAble`: `/swing` (`LivingEntity.swing(hand, animation,
-/// true)`) in the first half of a spear's thrust leaves it alone, and past the
-/// half restarts it with the command's own animation.
-#[test]
-fn a_swing_inside_the_first_half_is_refused() {
+/// A zombie mid-thrust of its iron spear, at vanilla `SwingState.ticks` =
+/// `ticks` of the spear's 19 (`ai.swing_time` counts one behind it).
+fn thrust_at(ticks: i32) -> Mob {
     let mut m = zombie();
     m.extra
         .set_main_hand_stack(Some(ItemStack::new("minecraft:iron_spear", 1)));
     m.swing_for_attack(false);
-    // One tick later: `SwingState.ticks` is 1, inside the first half of 19.
-    tick_swing(&mut m);
-    let ticks = m.ai.swing_time;
-    m.swing_hand_modified(false, SwingAnimation::DEFAULT);
-    assert_eq!(
-        m.ai.swing_time, ticks,
-        "the refused swing leaves the animation"
-    );
-    assert_eq!(m.swing_duration(), 19, "and the spear's length");
-    assert!(m.extra.swing_stab);
-    // `ticks <= durationTicks / 2` holds up to 9; the 10th tick is past it.
-    while m.ai.swing_time < 9 {
+    for _ in 0..ticks {
         tick_swing(&mut m);
     }
-    m.swing_hand_modified(false, SwingAnimation::DEFAULT);
-    assert_eq!(m.ai.swing_time, -1, "past the first half it restarts");
-    assert_eq!(m.swing_duration(), 6, "with the command's animation");
-    assert!(!m.extra.swing_stab);
+    assert_eq!(m.ai.swing_time, ticks - 1, "the swing's tick");
+    m
+}
+
+/// `SwingState.startIfAble`: `/swing` (`LivingEntity.swing(hand, animation,
+/// true)`) inside the first half of a spear's thrust leaves it alone, and past
+/// the half restarts it with the command's own animation. Of a 19-tick swing
+/// the pinned 26.3 oracle refuses `ticks` 1 through 9 and accepts 0 and 10.
+#[test]
+fn a_swing_inside_the_first_half_is_refused() {
+    for ticks in 1..=9 {
+        let mut m = thrust_at(ticks);
+        m.swing_hand_modified(false, SwingAnimation::DEFAULT);
+        assert_eq!(
+            m.ai.swing_time,
+            ticks - 1,
+            "tick {ticks}: the refused swing leaves the animation"
+        );
+        assert_eq!(m.swing_duration(), 19, "and the spear's length");
+        assert!(m.extra.swing_stab);
+    }
+    for ticks in [0, 10] {
+        let mut m = thrust_at(ticks);
+        m.swing_hand_modified(false, SwingAnimation::DEFAULT);
+        assert_eq!(
+            m.ai.swing_time, -1,
+            "tick {ticks}: past the first half it restarts"
+        );
+        assert_eq!(m.swing_duration(), 6, "with the command's animation");
+        assert!(!m.extra.swing_stab);
+    }
+}
+
+/// The mob's guard and the first-person `SwingState`'s are the same vanilla
+/// rule: of a 19-tick swing both refuse `ticks` 1 through 9 and accept 0 and
+/// 10, which the mob reads one lower because `ai.swing_time` counts one behind
+/// `SwingState.ticks`.
+#[test]
+fn the_mob_and_the_first_person_guard_refuse_the_same_ticks() {
+    for ticks in [0, 1, 8, 9, 10] {
+        let mut m = thrust_at(ticks);
+        let mut state = SwingState::default();
+        assert!(state.start_if_able(Hand::Main, SwingAnimation::DEFAULT, 19));
+        for _ in 0..ticks {
+            state.tick();
+        }
+        assert_eq!(
+            m.swing_hand_modified(false, SwingAnimation::DEFAULT),
+            state.start_if_able(Hand::Main, SwingAnimation::DEFAULT, 6),
+            "tick {ticks}"
+        );
+    }
 }
 
 /// The wiring: `MeleeAttackGoal.checkAndPerformAttack` swings through
