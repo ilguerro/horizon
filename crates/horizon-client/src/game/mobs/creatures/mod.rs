@@ -1698,7 +1698,7 @@ impl Game<'_> {
         // Player.killedEntity: the killed statistic goes to the causing
         // entity, so a kill by a mob (a tame wolf credited to its owner)
         // leaves it out; ServerPlayer.awardKillScore counts the rest.
-        if !super::combat::killed_by_mob(m) {
+        if !killed_by_mob(m) {
             self.award_stat("killed", &m.kind.id, 1);
         }
         self.award_custom_stat("mob_kills", 1);
@@ -9267,6 +9267,13 @@ mod tests {
         let (right, _) = thrown_item_axes(CameraType::ThirdPersonBack, 0.0, 0.0);
         assert!(right.abs_diff_eq(glam::Vec3::NEG_X, 1e-5), "{right}");
     }
+}
+
+/// Whether the killing blow's causing entity (`DamageSource.getEntity`) was a
+/// mob, such as a tame wolf whose owner gets the kill credit.
+fn killed_by_mob(m: &Mob) -> bool {
+    m.last_damage
+        .is_some_and(|(d, _)| matches!(d.attacker, Some(Who::Mob(_))))
 }
 
 /// `Animal.finalizeSpawnChildFromBreeding`'s player: the one who fed the

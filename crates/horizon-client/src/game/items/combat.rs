@@ -935,12 +935,6 @@ fn causing_entity(m: &Mob) -> Option<Who> {
     m.last_damage.and_then(|(d, _)| d.attacker)
 }
 
-/// Whether the killing blow's causing entity was a mob, such as a tame wolf
-/// whose owner gets the kill credit.
-pub(super) fn killed_by_mob(m: &Mob) -> bool {
-    matches!(causing_entity(m), Some(Who::Mob(_)))
-}
-
 /// Whether the killing blow's causing entity was a player: `Raider.die` grants
 /// hero of the village to that entity, not to the player `getKillCredit` names.
 /// `Villager.die` gossips about any causing entity, a mob's included, under its
