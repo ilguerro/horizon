@@ -73,7 +73,7 @@ fn only(said: &[String]) -> &str {
 /// `random_chance` reads the provider. A non-finite chance is 0, so it never
 /// holds (`ContextFloatProvider.getFloat`).
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_conditional_reads_its_random_chance_provider() {
     let mut game = game();
     let conditional = |chance: &str| {
@@ -107,7 +107,7 @@ fn a_conditional_reads_its_random_chance_provider() {
 /// `getFloatOrThrow`: a non-finite one is an `ArithmeticException`, which
 /// `ComputeCommand.computeAsInt` reports, not a full count.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_non_finite_binomial_probability_fails_the_command() {
     let mut game = game();
     let binomial =
