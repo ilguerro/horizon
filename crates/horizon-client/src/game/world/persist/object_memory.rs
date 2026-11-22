@@ -502,7 +502,7 @@ impl Game<'_> {
         // Structure mobs that generation left to finish: saves from before
         // they were finalized at placement, or a placement that could not.
         let mut tag = tag;
-        Self::normalize_loaded_tags(&mut tag);
+        Self::normalize_loaded_mob_tags(&mut tag);
         let mut finalize = false;
         if let Tag::Compound(c) = &mut tag {
             finalize = c.remove(&"horizon:finalize".into()).is_some();

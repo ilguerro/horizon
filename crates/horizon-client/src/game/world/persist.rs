@@ -1176,6 +1176,12 @@ impl Game<'_> {
     /// (`this.tags.clear(); input.read("Tags", TAG_LIST_CODEC).ifPresent(this.tags::addAll)`,
     /// Entity.java:2230-2231, into the `Set<String> tags` of :286).
     /// Keep that adopted state in the retained compound for commands and saves.
+    pub(in crate::game) fn normalize_loaded_mob_tags(tag: &mut Tag) {
+        Self::normalize_loaded_tags(tag);
+    }
+
+    /// [`Self::normalize_loaded_mob_tags`] for every kind that keeps `Tags`, not
+    /// only a mob: the same `Entity.load` set for a retained raw compound.
     pub(in crate::game) fn normalize_loaded_tags(tag: &mut Tag) {
         let Tag::Compound(raw) = tag else {
             return;
