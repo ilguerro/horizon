@@ -94,7 +94,7 @@ fn dropped(game: &Game<'_>, item: &str) -> usize {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn damage_reaches_frames_paintings_and_cushions() {
     let mut game = game();
     // A filled frame and a painting on the wall's west face, a cushion on the floor.
@@ -132,7 +132,7 @@ fn damage_reaches_frames_paintings_and_cushions() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_fixed_frame_only_gives_way_to_a_bypassing_hit() {
     let mut game = game();
     assert!(game.run_command(
@@ -152,7 +152,7 @@ fn a_fixed_frame_only_gives_way_to_a_bypassing_hit() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_bypassing_type_hurts_a_creative_and_a_spectator_player() {
     for mode in ["creative", "spectator"] {
         let mut game = game();
@@ -171,7 +171,7 @@ fn a_bypassing_type_hurts_a_creative_and_a_spectator_player() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_boat_hit_posts_the_damage_event() {
     let mut game = game();
     with_player(&mut game);
@@ -217,7 +217,7 @@ fn a_boat_hit_posts_the_damage_event() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_mob_caused_hit_is_credited_to_the_mob() {
     let mut game = game();
     assert!(game.run_command("summon minecraft:item_frame 3.5 100.5 6.5 {Facing:4b}"));
@@ -240,4 +240,54 @@ fn a_mob_caused_hit_is_credited_to_the_mob() {
     };
     assert_eq!(sources("minecraft:entity_die"), vec![Some(Who::Mob(mob))]);
     assert_eq!(sources("minecraft:block_change"), vec![Some(Who::Mob(mob))]);
+}
+
+/// A listener that keeps every hanging entity a break reaches.
+struct KeepFrame;
+
+#[mod_api::__subscriptions]
+impl mod_api::Hooks for KeepFrame {
+    fn hanging_break(
+        &self,
+        _host: &mut dyn mod_api::ServerHost,
+        _event: &mut mod_api::HangingBreakEvent<'_>,
+    ) -> mod_api::Flow {
+        mod_api::Flow::Cancel
+    }
+}
+
+#[test]
+#[ignore = "daily"]
+fn a_cancelled_fixed_frame_break_keeps_the_frame_and_its_item() {
+    let mods: mod_api::Mods = vec![mod_api::ModEntry::new("keep-frame", Box::new(KeepFrame))].into();
+    mod_platform::testing::with_mods(mods, || {
+        let mut game = game();
+        assert!(game.run_command(
+            "summon minecraft:item_frame 3.5 100.5 3.5 {Facing:4b,Fixed:1b,Item:{id:\"minecraft:diamond\",count:1}}"
+        ));
+        // `#bypasses_invulnerability` lets the fixed frame take the hit, but the
+        // listener keeps the break: the frame and its item stay.
+        assert!(!game.run_command(
+            "damage @e[type=minecraft:item_frame,limit=1] 1 minecraft:generic_kill"
+        ));
+        assert_eq!(game.item_frames.len(), 1, "the listener kept the frame");
+        assert!(game.item_frames[0].item.is_some(), "its item stays");
+        assert_eq!(dropped(&game, "minecraft:item_frame"), 0);
+        assert_eq!(dropped(&game, "minecraft:diamond"), 0);
+    });
+}
+
+#[test]
+#[ignore = "daily"]
+fn an_explosion_breaks_a_filled_frame_and_drops_its_item() {
+    let mut game = game();
+    assert!(game.run_command(
+        "summon minecraft:item_frame 3.5 100.5 6.5 {Facing:4b,Item:{id:\"minecraft:diamond\",count:1}}"
+    ));
+    // `ItemFrame.shouldDamageDropItem` is false for an explosion, so
+    // `BlockAttachedEntity.hurtServer` breaks the frame whole, item included.
+    assert!(game.run_command("damage @e[type=minecraft:item_frame,limit=1] 1 minecraft:explosion"));
+    assert!(game.item_frames.is_empty(), "the filled frame breaks");
+    assert_eq!(dropped(&game, "minecraft:item_frame"), 1);
+    assert_eq!(dropped(&game, "minecraft:diamond"), 1);
 }
