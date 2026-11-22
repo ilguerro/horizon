@@ -7,6 +7,7 @@ horizon-client game::big_dripleaf_tests::a_leaf_stays_flat_under_an_entity_that_
 horizon-client game::big_dripleaf_tests::a_leaf_tilts_under_a_mob_an_item_a_boat_a_minecart_and_a_trident lib daily resources
 horizon-client game::commands::modprofile::tests::modprofile_state_and_report_side_effects lib daily child-process
 horizon-client game::commands::selector_bounds_tests::actual_selector_uses_body_overlap_but_distance_stays_at_the_origin lib daily game-boot
+horizon-client game::commands::tp_motion::tp_motion_tests::a_teleport_wakes_a_sleeping_player_before_it_moves_them lib daily game-boot
 horizon-client game::commands::world_cmds::allay_owner_damage_tests::allay_owner_adapters_compare_the_actual_player_uuid lib daily game-boot
 horizon-client game::container_loot::tests::commands_clone_and_structures lib daily child-process
 horizon-client game::container_loot::tests::player_and_world_triggers lib daily child-process
@@ -206,6 +207,8 @@ horizon-client game::server_travel::changed_dimension_tests::a_command_teleport_
 horizon-client game::server_travel::changed_dimension_tests::a_nether_portal_trip_is_heard_once_on_every_server lib daily resources
 horizon-client game::server_travel::changed_dimension_tests::an_end_gateway_jump_within_the_level_is_not_heard_on_any_server lib daily resources
 horizon-client game::server_travel::credits_respawn_tests::the_credits_respawn_waits_for_the_client_to_load lib daily resources
+horizon-client game::server_travel::hold_tests::a_cross_level_tp_stops_the_item_in_use lib daily resources
+horizon-client game::server_travel::hold_tests::a_cross_level_tp_wakes_the_sleeper_it_moves lib daily resources
 horizon-client game::split::players::tests::offline_guests_join_only_local_servers lib daily network
 horizon-client game::stats::phantom_spawn_tests::no_phantoms_under_a_roof_the_sky_light_does_not_reach lib daily game-boot
 horizon-client game::stats::phantom_spawn_tests::phantoms_spawn_under_a_glass_roof lib daily game-boot
@@ -244,6 +247,7 @@ horizon-client game::transaction_entities_tests::exhausted_ids_stop_the_tick_spa
 horizon-client game::transaction_entities_tests::ids_never_go_back_and_a_stale_handle_names_no_later_entity lib daily child-process
 horizon-client game::transaction_entities_tests::late_id_kinds_spawned_then_aborted_are_removed lib daily child-process
 horizon-client game::transaction_entities_tests::outside_a_transaction_joins_and_leaves_are_told_at_the_call lib daily child-process
+horizon-client game::vehicle_teleport::teleport_cross_tests::a_cross_level_tp_keeps_only_the_motion_of_its_relative_axes lib daily resources
 horizon-client game::viewed_worlds::switch::tests::a_level_opened_after_login_is_forgotten_once_left lib daily resources
 horizon-client game::visibility_unwind_tests::visibility_listener_unwind_does_not_block_an_outside_save lib daily child-process
 horizon-client game::wake_time::tests::a_later_listener_reads_and_replaces_the_earlier_adjustment lib daily resources
