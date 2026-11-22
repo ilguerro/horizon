@@ -150,7 +150,7 @@ fn world(name: &str) -> std::path::PathBuf {
 /// Component.translatable("commands.save.success"), true)`: the operator who
 /// ran it and the other operators both hear that the game was saved.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_guests_save_all_reaches_the_other_operators() {
     let (mut game, alice, bob) = server_with_two_operators(&world("save-all-success"));
     let mut ran = None;
@@ -185,7 +185,7 @@ fn a_guests_save_all_reaches_the_other_operators() {
 /// not go through fails the command (result 0) and is the source's red line
 /// alone, not a message every operator gets.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_failed_save_fails_at_the_source_only() {
     let dir = world("save-all-failure");
     let (mut game, alice, bob) = server_with_two_operators(&dir);
