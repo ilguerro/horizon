@@ -17,7 +17,7 @@ fn diamonds(game: &Game<'_>) -> u32 {
 /// false)` then `makeFakeItem`, so one diamond leaves the player's head at once
 /// (`PickupDelay` 32767, `Age` 5999) and cannot be taken.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn give_that_fits_spawns_a_fake_item_that_is_never_picked_up() {
     let mut game = server_game();
     let feet = Vec3::new(8.5, 100.0, 8.5);

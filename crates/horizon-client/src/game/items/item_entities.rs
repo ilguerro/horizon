@@ -829,8 +829,23 @@ impl Game<'_> {
             at[1] + self.target_eye_height(super::commands::Target::Player),
             at[2],
         ]);
-        let mut r = horizon_client::random_source::entity();
-        let velocity = horizon_client::entities::drop_motion(&mut r, self.yaw, self.pitch, false);
+        // `createItemStackToDrop` draws the spread, and `giveItem` then the
+        // sound's pitch, from the player's own random: six draws of one stream,
+        // as `throw_from_eyes` does. A `/give` whose target this game does not
+        // hold keeps a fresh one rather than losing the draws.
+        fn flash_draws(
+            r: &mut impl horizon_core::random::RandomSource,
+            yaw: f32,
+            pitch: f32,
+        ) -> ([f64; 3], f32) {
+            let velocity = horizon_client::entities::drop_motion(r, yaw, pitch, false);
+            let sound = ((r.next_float() - r.next_float()) * 0.7 + 1.0) * 2.0;
+            (velocity, sound)
+        }
+        let (velocity, pitch) = match self.player.as_mut() {
+            Some(player) => flash_draws(&mut player.random, self.yaw, self.pitch),
+            None => flash_draws(&mut horizon_client::random_source::entity(), self.yaw, self.pitch),
+        };
         let stack = ItemStack {
             item: item.into(),
             count: 1,
@@ -840,7 +855,6 @@ impl Game<'_> {
         // `new ItemEntity(level, getX(), getEyeY() - 0.3F, getZ(), stack)`.
         let y = eye[1] - f64::from(0.3f32);
         self.spawn_item_fake(stack, [eye[0], y, eye[2]], velocity);
-        let pitch = ((r.next_float() - r.next_float()) * 0.7 + 1.0) * 2.0;
         self.audio
             .play("minecraft:entity.item.pickup", Some(at), 0.2, pitch);
     }

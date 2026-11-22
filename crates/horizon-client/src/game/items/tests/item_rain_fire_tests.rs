@@ -40,7 +40,7 @@ fn hisses(game: &Game<'_>) -> Vec<(String, [f64; 3], f32, f32)> {
 /// fire-immune stack lost its fire in `Entity.baseTick`, before the `wasOnFire`
 /// the hiss compares, so the rain is silent for it.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn rain_puts_a_burning_item_out_with_the_hiss() {
     let mut game = raining_game();
     game.spawn_item(
@@ -90,7 +90,7 @@ fn rain_puts_a_burning_item_out_with_the_hiss() {
 /// rain undoes a fire block's `BaseFireBlock.fireIgnite` in the same tick, and
 /// `wasOnFire` (taken before it) is false: no hiss.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn rain_puts_out_what_a_fire_block_ignites_in_the_same_tick() {
     let mut game = raining_game();
     let stone = game
