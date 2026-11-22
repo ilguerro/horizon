@@ -70,7 +70,7 @@ fn with_game(test: impl FnOnce(&mut Game<'_>)) {
 /// `getCallingPlayerAsCollection(source.getPlayer())`, empty for a command
 /// block or the console, so the command fails and nothing is heard.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_source_without_a_player_fails_and_plays_nothing() {
     with_game(|game| {
         game.command_source = Some(Source {
@@ -110,7 +110,7 @@ fn a_source_without_a_player_fails_and_plays_nothing() {
 /// `packet.getSeed()`, so every client picks the same variant:
 /// `WeighedSoundEvents.getSound` draws one `nextInt(total weight)`.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_sound_packet_picks_its_variant_from_the_packet_s_seed() {
     with_game(|game| {
         game.audio.engine.registry.add_file(
@@ -237,7 +237,7 @@ fn sent_sounds(rx: &Receiver<Out>) -> Vec<play::Sound> {
 /// `PlaySoundCommand.playSound` sends one packet per target; the host's own
 /// play is not captured and broadcast to the guests again.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_targeted_guest_hears_a_played_sound_once() {
     with_game(|game| {
         let rx = lan_guest(game, 2, "Bob", [6.5, 200.0, 4.5]);
