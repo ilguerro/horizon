@@ -7,7 +7,7 @@
 //! another level: a Respawn packet keeping all data, then a teleport to the
 //! exit once the destination has loaded around them.
 
-use super::end::GatewayJob;
+use super::end::{GatewayJob, end_arrival_transition};
 use super::nether_portal::{PLAYER_DELAY, Plan};
 use super::persist::OffLevel;
 use super::respawn_anchor::RespawnConfig;
@@ -1289,11 +1289,12 @@ impl Game<'_> {
                     }
                 }
             } else if trip.end {
-                let guest_arrival =
-                    self.as_guest(trip.conn, |g| g.end_arrival(trip.target, &mut trip.finder));
+                let guest_arrival = self.as_guest(trip.conn, |g| {
+                    end_arrival_transition(g, trip.target, &mut trip.finder)
+                });
                 let arrival = match guest_arrival {
                     Some(arrival) => arrival,
-                    None => self.end_arrival(trip.target, &mut trip.finder),
+                    None => end_arrival_transition(self, trip.target, &mut trip.finder),
                 };
                 match arrival {
                     Ok(Some(arrival)) => {
