@@ -25,6 +25,15 @@ fn asleep(game: &mut Game<'_>) {
 /// Where the sleeper's body lies before the teleport.
 const BED: Vec3 = Vec3::new(4.5, 100.5625, 4.5);
 
+/// Where the wake stands them, from the pinned vanilla oracle and not from a
+/// teleport: `LivingEntity.stopSleeping` asks
+/// `AbstractBedBlock.findStandUpPosition` for the bed at (4,100,4) facing
+/// south, with the body's yaw 0. `Direction.isFacingAngle(0)` is false for the
+/// bed's clock-wise side (WEST), and its first offset, (3,100,4), is a safe
+/// spot on the stone floor, so `DismountHelper.findSafeDismountLocation`
+/// answers `Vec3.upFromBottomCenterOf` of that block.
+const STOOD: Vec3 = Vec3::new(3.5, 100.0, 4.5);
+
 /// Sleeps in the bed `asleep` made.
 fn sleep(game: &mut Game<'_>) {
     // The wake's stand-up position is picked with the body's yaw, which the
@@ -48,8 +57,11 @@ fn a_teleport_wakes_a_sleeping_player_before_it_moves_them() {
         // its own: the wake's own teleport, then the command's.
         sleep(game);
         assert!(game.run_command("tp @s ~ ~ ~"));
-        let stood = game.player.as_ref().unwrap().position;
-        assert_ne!(stood, BED, "the wake stands them beside the bed");
+        assert_eq!(
+            game.player.as_ref().unwrap().position,
+            STOOD,
+            "the wake stands them beside the bed, where the command's own ~ ~ ~ leaves them"
+        );
         assert!(game.sleeping.is_none(), "the sleeper is out of bed");
         // `stopSleepInBed(true, true)` is a forceful wake-up: their own sleep
         // counter stays 0 (their client fades from the animate packet), as on
@@ -62,7 +74,7 @@ fn a_teleport_wakes_a_sleeping_player_before_it_moves_them() {
         sleep(game);
         assert!(game.run_command("tp @s ~ ~ ~2"));
         let at = game.player.as_ref().unwrap().position;
-        assert_eq!(at, Vec3::new(stood.x, stood.y, stood.z + 2.0));
+        assert_eq!(at, Vec3::new(STOOD.x, STOOD.y, STOOD.z + 2.0));
         assert!(game.sleeping.is_none(), "the sleeper is out of bed");
         assert_eq!(game.sleep_timer, 0, "a forceful wake-up leaves no fade");
         // An absolute destination is the command's own, wherever the wake left
@@ -74,3 +86,4 @@ fn a_teleport_wakes_a_sleeping_player_before_it_moves_them() {
         assert!(game.sleeping.is_none(), "the sleeper is out of bed");
     });
 }
+
