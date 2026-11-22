@@ -1521,6 +1521,16 @@ impl Game<'_> {
             let Some(host) = self.lan.as_mut() else {
                 return;
             };
+            // The wake and the level opening run mod listeners, and one may
+            // have removed a guest (`player.remove_fake`): this connection's
+            // index is found again, and a connection that left has nothing
+            // left to move.
+            let Some(i) = host.hub.guests.iter().position(|g| g.conn == t.conn) else {
+                if let Err(e) = self.enter_level(source) {
+                    log::error!("could not reopen {}: {e}", source.id());
+                }
+                continue;
+            };
             let (uuid, name) = (host.hub.guests[i].uuid, host.hub.guests[i].name.clone());
             let (yaw, pitch, origin, passenger_body) = host.hub.guests.update(i, |g| {
                 let [yaw, pitch] = t.rotation.unwrap_or([g.yaw, g.pitch]);

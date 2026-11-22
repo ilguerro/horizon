@@ -502,3 +502,66 @@ fn a_world_spawn_search_keeps_movement_held_between_candidate_chunks() {
     assert!(!game.on_server_trip(CONN));
     assert!(!landing(game.lan.as_ref().unwrap()));
 }
+
+/// The wake and the level opening run mod listeners, and one may remove a fake
+/// player (`player.remove_fake`): the guest a command moves is found again
+/// after them, so the teleport moves the sleeper and not whoever took its
+/// index, and a connection that left is skipped instead of read.
+#[test]
+#[ignore = "daily"]
+fn a_cross_level_tp_finds_the_sleeper_again_after_a_listener_removes_a_fake() {
+    use super::LevelTeleport;
+    use mod_api::{Hooks, ModEntry, PlayerBedLeaveEvent, PlayerRef, ServerHost};
+    use std::sync::{Arc, Mutex};
+
+    /// The fake the listener removes, once the test has made it.
+    struct Removes(Arc<Mutex<Option<PlayerRef>>>);
+    #[mod_api::__subscriptions]
+    impl Hooks for Removes {
+        fn player_bed_leave(&self, host: &mut dyn ServerHost, _event: &mut PlayerBedLeaveEvent<'_>) {
+            if let Some(fake) = *self.0.lock().unwrap() {
+                fake.remove_fake(host);
+            }
+        }
+    }
+    let fake = Arc::new(Mutex::new(None));
+    let mods: mod_api::Mods = vec![ModEntry::new("removes", Box::new(Removes(fake.clone())))].into();
+    mod_platform::testing::with_mods(mods, || {
+        let mut resources = None;
+        let (mut game, _rx) = server(&mut resources);
+        // A fake player standing before the sleeper in the guest list, so that
+        // removing it moves the sleeper's index.
+        let level = game.level(game.dim.id()).unwrap();
+        let made = game.fake_player(level, 1234, "machine").unwrap();
+        game.lan.as_mut().unwrap().hub.guests.swap(0, 1);
+        *fake.lock().unwrap() = Some(made);
+        game.lan.as_mut().unwrap().hub.guests.update(1, |g| {
+            g.bed = Some([4, 100, 4]);
+            g.sleeping = true;
+            g.sleep_timer = 100;
+        });
+        game.level_teleports.push(LevelTeleport {
+            conn: CONN,
+            dim: crate::game::Dim::Nether,
+            at: [8.5, 64.0, 8.5],
+            rotation: None,
+            vehicle: None,
+        });
+        game.run_level_teleports();
+        let guests = &game.lan.as_ref().unwrap().hub.guests;
+        assert!(
+            guests.iter().all(|g| g.uuid != 1234),
+            "the listener's fake is gone"
+        );
+        let sleeper = guests
+            .iter()
+            .find(|g| g.conn == CONN)
+            .expect("the sleeper is still a guest");
+        assert_eq!(
+            sleeper.dimension,
+            crate::game::Dim::Nether.id(),
+            "the sleeper is the one the command moved"
+        );
+        assert_eq!(sleeper.position, [8.5, 64.0, 8.5]);
+    });
+}
