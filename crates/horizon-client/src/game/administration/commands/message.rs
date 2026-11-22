@@ -6,7 +6,7 @@ use super::*;
 /// the first selector is the root literal, each selector is one
 /// `EntitySelector.joinNames` component, and the text between them follows.
 /// The bool says whether the message had a selector at all.
-pub(super) fn expand_selectors(game: &mut Game<'_>, raw: &str) -> (Text, bool) {
+pub(in crate::game) fn expand_selectors(game: &mut Game<'_>, raw: &str) -> (Text, bool) {
     struct Part {
         start: usize,
         end: usize,

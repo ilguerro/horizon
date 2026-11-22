@@ -14,7 +14,7 @@ pub(super) mod extra;
 mod give;
 mod item_count;
 pub(in crate::game) mod items;
-mod message;
+pub(in crate::game) mod message;
 mod misc;
 mod modprofile;
 mod place;
@@ -3915,7 +3915,7 @@ impl Game<'_> {
             Some(Arg::Str(s)) => s.clone(),
             _ => String::new(),
         };
-        let (message, _) = self.expand_selectors(&raw);
+        let message = self.expand_selectors(&raw);
         let name = self.source_display_name();
         // A player's command whose output is captured (a function, `execute …
         // run say`, the command harness) gets the announcement with that
@@ -3989,9 +3989,9 @@ impl Game<'_> {
         );
         Ok(1)
     }
-    /// MessageArgument: `@p`-style selectors in a message become names, and whether any.
-    pub(super) fn expand_selectors(&mut self, raw: &str) -> (Text, bool) {
-        message::expand_selectors(self, raw)
+    /// MessageArgument: `@p`-style selectors in a message become names.
+    pub(super) fn expand_selectors(&mut self, raw: &str) -> Text {
+        message::expand_selectors(self, raw).0
     }
 }
 /// Split at a separator outside brackets, braces and quotes.

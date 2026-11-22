@@ -308,7 +308,7 @@ impl Game<'_> {
                 message,
             } = chat;
             let events = self.for_player(super::commands::Target::Guest(conn), |g| {
-                let (resolved, parts) = g.expand_selectors(&text);
+                let (resolved, parts) = super::commands::message::expand_selectors(g, &text);
                 let mut events = Vec::new();
                 let Some(host) = g.lan.as_ref() else {
                     return events;
