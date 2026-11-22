@@ -449,8 +449,13 @@ fn combat_target(m: &mut Mob, w: &MobWorld, who: Who, range: Option<f64>, sight:
         return false;
     }
     match who {
+        // `TargetingConditions.test`'s `targeter.canAttack(target)` and
+        // `isAlliedTo` read the player the tick selected, the one
+        // `player_in_range` measures and `target_info` describes.
         Who::Player => {
-            let Some(p) = &w.player else { return false };
+            let Some(p) = w.selected_player() else {
+                return false;
+            };
             if p.creative || p.spectator || p.allies.contains(&m.id) {
                 return false;
             }
@@ -669,7 +674,7 @@ impl Goal for Charge {
             }
         }
         if hit.is_none()
-            && let Some(p) = &cx.w.player
+            && let Some(p) = cx.w.selected_player()
             && p.bounds.intersects(m.bounds())
             && charge_target(m, cx.w, Who::Player)
         {

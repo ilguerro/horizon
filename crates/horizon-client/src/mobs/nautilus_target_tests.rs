@@ -254,3 +254,44 @@ fn a_charge_never_targets_the_nautilus_itself() {
     );
 }
 
+/// `TargetingConditions.test` reads the player the tick selected: the mode
+/// and alliance checks must describe the same player `player_in_range` and
+/// `target_info` do, not the one the tick started with.
+#[test]
+fn the_selected_player_decides_the_combat_conditions() {
+    let mut out = None;
+    let ran = with_test_world(&[], |w, types| {
+        let kind = Arc::new(types.types["minecraft:nautilus"].clone());
+        let at = |spectator| {
+            let mut p = crate::mobs::world::test_player(Vec3::new(0.5, 64.0, 0.5));
+            p.spectator = spectator;
+            p
+        };
+        let mut verdicts = Vec::new();
+        for (initial, selected) in [(true, false), (false, true)] {
+            let selection = crate::mobs::player_selection::PlayerSelection::new(
+                vec![crate::mobs::player_selection::TickPlayer {
+                    entity_id: 42,
+                    connection: Some(7),
+                    view: at(selected),
+                }],
+                Some(42),
+            )
+            .expect("one player, selected");
+            let mut world = w.clone();
+            world.player = Some(at(initial));
+            world.player_selection = Some(&selection);
+            let mut m = Mob::new(1, kind.clone(), Vec3::new(0.5, 62.0, 0.5), 270.0);
+            verdicts.push(combat_target(&mut m, &world, Who::Player, None, false));
+        }
+        out = Some(verdicts);
+    });
+    let Some(verdicts) = out.filter(|_| ran) else {
+        return;
+    };
+    assert_eq!(
+        verdicts,
+        [true, false],
+        "the selected player's mode decides, not the initial one's"
+    );
+}
