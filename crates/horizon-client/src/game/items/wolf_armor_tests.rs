@@ -28,7 +28,7 @@ fn drain(game: &mut Game<'_>) {
 }
 
 #[test]
-#[ignore = "needs prepared resources (HORIZON_TEST_RESOURCES)"]
+#[ignore = "daily"]
 fn thorns_wear_a_wolfs_body_piece_and_a_break_sends_its_event() {
     let mut game = game_with_armoured_wolf();
     let thorns = Damage {
@@ -82,7 +82,7 @@ fn thorns_wear_a_wolfs_body_piece_and_a_break_sends_its_event() {
 }
 
 #[test]
-#[ignore = "needs prepared resources (HORIZON_TEST_RESOURCES)"]
+#[ignore = "daily"]
 fn wolf_break_event_reaches_clients_before_the_empty_body_slot() {
     use horizon_client::lan::Out;
     use horizon_protocol::{buf::Reader, packets::play::Clientbound};
