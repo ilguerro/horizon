@@ -1092,6 +1092,8 @@ impl Game<'_> {
     }
 
     /// `Player.playSound` excludes the guest; its client plays its own sound.
+    /// The copy the others hear is `LivingEntity.makeSound`'s, at
+    /// `getSoundVolume` and `getVoicePitch`.
     pub(super) fn guest_hurt_sound(&mut self, conn: u32, sound: &str) {
         let Some((at, id)) = self
             .lan
@@ -1101,10 +1103,11 @@ impl Game<'_> {
         else {
             return;
         };
+        let pitch = crate::game::remote::player_voice_pitch();
         if id != self.own_entity_id() {
-            self.audio.play_unshared(sound, Some(at), 1.0, 1.0);
+            self.audio.play_unshared(sound, Some(at), 1.0, pitch);
         }
-        self.send_level_sound(LevelSound::new(sound, at, 1.0, 1.0), Some(conn));
+        self.send_level_sound(LevelSound::new(sound, at, 1.0, pitch), Some(conn));
     }
 
     /// `ServerLevel.players()` in turn: the host's own player, then each

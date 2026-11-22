@@ -156,6 +156,18 @@ pub(super) fn remote_text(tag: &Tag) -> horizon_client::text::Text {
     comp_text(&tag_to_json(tag))
 }
 
+/// `Player.getVoicePitch`: a constant 1.0
+/// (`javap -p -c -constants net.minecraft.world.entity.player.Player`:
+/// `0: fconst_1  1: freturn`). `LivingEntity.getVoicePitch`, which the mobs
+/// port, raises it for a baby and jitters it; a player's does neither. The
+/// server-side copy of a player's hurt or death sound (`LivingEntity.makeSound`
+/// through `playHurtSound`, and the death sound on the killing blow) plays at
+/// it, while the hurt player's own client plays `handleDamageEvent`'s jittered
+/// pitch instead. It takes no random, so it draws nothing from any random.
+pub(super) fn player_voice_pitch() -> f32 {
+    1.0
+}
+
 /// The live entity a bound sound names; absence means that object was removed.
 fn entity_sound_state(
     id: i32,

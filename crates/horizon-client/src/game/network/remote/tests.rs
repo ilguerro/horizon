@@ -4620,3 +4620,62 @@ fn flint_and_steel_use_on_ends_the_click() {
     let done = game.remote_use_block(Hand::Main);
     assert!(done, "flint and steel useOn must end the click");
 }
+
+/// `LivingEntity.handleDamageEvent`: the hurt player's own client plays its
+/// hurt sound at `(nextFloat() - nextFloat()) * 0.2F + 1.0F` from the player's
+/// own random, not at `getVoicePitch`, which is a constant 1.0 for a player.
+#[test]
+#[ignore = "daily"]
+fn a_damage_event_plays_the_hurt_sound_at_the_player_randoms_pitch() {
+    use horizon_protocol::packets::play::{self, Clientbound as C};
+    mod_platform::testing::with_mods(Vec::new().into(), || {
+        super::super::native_entity_refs::tests::with_client_game(|game| {
+            let (client, _server) = horizon_protocol::connection::Pipe::pair();
+            game.connect_local(client, "hurt-pitch").unwrap();
+            let remote = game.remote.as_mut().unwrap();
+            remote.logged_in = true;
+            remote.entity_id = 7;
+            game.player = Some(
+                horizon_client::motion::PlayerMotion::new(
+                    game.motion,
+                    horizon_core::geometry::Vec3::new(3.0, 64.0, 4.0),
+                )
+                .unwrap(),
+            );
+            // A damage type the client's registries do not know: `hurt`'s own sound.
+            let source = 0;
+            // The two draws each handleDamageEvent makes from the player's random.
+            let mut random = game.player.as_ref().unwrap().random.clone();
+            let expected = [
+                horizon_client::health::sound_pitch(&mut random),
+                horizon_client::health::sound_pitch(&mut random),
+            ];
+            game.audio.capture = Some(Vec::new());
+            for _ in 0..2 {
+                game.handle_packet(C::DamageEvent(play::DamageEvent {
+                    id: 7,
+                    source_type: source,
+                    cause: None,
+                    direct: None,
+                    position: None,
+                }))
+                .unwrap();
+            }
+            let heard: Vec<f32> = game
+                .audio
+                .capture
+                .as_ref()
+                .unwrap()
+                .iter()
+                .filter(|s| s.event == "minecraft:entity.player.hurt")
+                .map(|s| s.pitch)
+                .collect();
+            assert_eq!(heard, expected);
+            assert_ne!(
+                expected,
+                [1.0, 1.0],
+                "the hurt sound's pitch is jittered, not getVoicePitch"
+            );
+        });
+    });
+}
