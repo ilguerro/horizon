@@ -1,7 +1,6 @@
 //! `Wolf`'s body armour: `Wolf.canArmorAbsorb`, the `Wolf.actuallyHurt` that
 //! takes a hit instead of the wolf's health, and the `Wolf.hurtArmor` that
 //! wears the piece on a hit it did not take.
-use super::item_break::equipment_break_event;
 use super::{Damage, DamageKind, Mob, MobEvent, Species, WOLF_ARMOR_DURABILITY};
 use horizon_core::equipment_slot::EquipmentSlot;
 
@@ -67,16 +66,20 @@ fn wear(m: &mut Mob, amount: i32) {
     let after = before + amount;
     let at = [m.position.x, m.position.y, m.position.z];
     if after >= WOLF_ARMOR_DURABILITY {
+        let broken = m.extra.body_stack().cloned();
         m.extra.set_body_stack(None);
         // `LivingEntity.onEquippedItemBroken`: the body slot's break event,
         // which each client's `breakItem` turns into the break sound and five
-        // crumbs.
-        let event = equipment_break_event(EquipmentSlot::Body);
-        m.outbox.push(MobEvent::EntityEvent {
-            mob: m.id,
-            event,
-            at,
-        });
+        // crumbs. The stack goes along: a window that is its own client has
+        // already lost it from the slot.
+        if let Some(stack) = broken {
+            m.outbox.push(MobEvent::EquipmentBroke {
+                mob: m.id,
+                slot: EquipmentSlot::Body,
+                stack,
+                at,
+            });
+        }
     } else {
         m.extra.set_body_damage(after);
         if crack(before) != crack(after) {

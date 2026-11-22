@@ -1843,6 +1843,17 @@ pub enum MobEvent {
         amount: f32,
         source: crate::health::HurtSource<'static>,
     },
+    /// `LivingEntity.onEquippedItemBroken`: the `stack` in `slot` broke, so the
+    /// slot is empty. The host broadcasts the slot's break event to the clients
+    /// (`entityEventForEquipmentBreak`) and, in a window that is its own client,
+    /// breaks the stack here (`breakItem`: its break sound and five crumbs) —
+    /// that window has already lost it from the slot.
+    EquipmentBroke {
+        mob: u32,
+        slot: horizon_core::equipment_slot::EquipmentSlot,
+        stack: crate::items::ItemStack,
+        at: [f64; 3],
+    },
     /// `LivingEntity.updateFallFlying`: every 20 glide ticks the glider in
     /// `slot` (the one `Util.getRandom` picked) takes one point of wear,
     /// `ItemStack.hurtAndBreak(1, this, slot)`. The host applies it with the

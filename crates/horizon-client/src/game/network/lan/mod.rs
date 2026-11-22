@@ -3249,6 +3249,23 @@ impl Game<'_> {
         self.break_sound_at(stack, at);
         self.eat_particles(stack, 5);
     }
+    /// `LivingEntity.onEquippedItemBroken` for a mob: the slot's break event to the
+    /// guests, and, in a window that is its own client, `breakItem` of the stack that
+    /// broke here — its own copy of the mob has already lost it (the clients the event
+    /// precedes still have it, `remote_equipment_break`).
+    pub(super) fn mob_equipment_broke(
+        &mut self,
+        id: u32,
+        slot: horizon_core::equipment_slot::EquipmentSlot,
+        stack: &horizon_client::items::ItemStack,
+        at: [f64; 3],
+    ) {
+        let event = horizon_client::mobs::item_break::equipment_break_event(slot);
+        self.lan_entity_event(id as i32, event, at);
+        if self.options.execution_role.is_client() {
+            self.mob_break_item(id as i32, stack, at);
+        }
+    }
     /// `ServerPlayer.crit` (or `magicCrit` when `magic`): this window's
     /// emitter, and an animation for the attacker's client and observers once
     /// the hub is back in place.

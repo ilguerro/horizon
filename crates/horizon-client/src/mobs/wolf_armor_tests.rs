@@ -93,10 +93,10 @@ fn a_wear_that_breaks_the_piece_is_on_it_before_the_next_hit() {
 }
 
 /// `ItemStack.hurtAndBreak` at the piece's maximum calls
-/// `LivingEntity.onEquippedItemBroken`, which broadcasts
-/// `entityEventForEquipmentBreak(BODY)` — 65 — instead of a raw break sound:
-/// each client's `breakItem` plays it at 0.8 volume and 0.8–1.2 pitch, gated
-/// on silence, and throws five crumbs.
+/// `LivingEntity.onEquippedItemBroken`, which reports
+/// `entityEventForEquipmentBreak(BODY)` — 65 — with the stack that broke,
+/// instead of a raw break sound: each client's `breakItem` plays it at 0.8
+/// volume and 0.8–1.2 pitch, gated on silence, and throws five crumbs.
 #[test]
 fn a_broken_body_piece_sends_the_body_break_event() {
     let mut test_level = crate::health::TestLevel::new(0);
@@ -115,11 +115,12 @@ fn a_broken_body_piece_sends_the_body_break_event() {
         .filter(|e| {
             matches!(
                 e,
-                MobEvent::EntityEvent {
+                MobEvent::EquipmentBroke {
                     mob: 7,
-                    event: 65,
+                    slot: horizon_core::equipment_slot::EquipmentSlot::Body,
+                    stack,
                     at: [0.0, 0.0, 0.0],
-                }
+                } if &*stack.item == "minecraft:wolf_armor"
             )
         })
         .collect();
