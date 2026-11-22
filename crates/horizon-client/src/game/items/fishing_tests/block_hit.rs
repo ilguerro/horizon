@@ -119,7 +119,7 @@ fn a_bobber_rings_a_floor_bell_on_its_side() {
 /// `block.amethyst_block.chime` at the struck block, at 1.0 and pitched by the
 /// level random; a block outside the class rings nothing and draws nothing.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_bobber_chimes_on_every_amethyst_block() {
     use crate::game::creatures::ProjectileHitter;
     use horizon_client::mobs::Who;
