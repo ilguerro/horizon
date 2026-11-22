@@ -25,8 +25,8 @@ fn asleep(game: &mut Game<'_>) {
 /// Where the sleeper's body lies before the teleport.
 const BED: Vec3 = Vec3::new(4.5, 100.5625, 4.5);
 
-/// Where the wake stands them, from the pinned vanilla oracle and not from a
-/// teleport: `LivingEntity.stopSleeping` asks
+/// Where the wake stands them, worked out from the decompiled 26.3 source and
+/// not from a teleport: `LivingEntity.stopSleeping` asks
 /// `AbstractBedBlock.findStandUpPosition` for the bed at (4,100,4) facing
 /// south, with the body's yaw 0. `Direction.isFacingAngle(0)` is false for the
 /// bed's clock-wise side (WEST), and its first offset, (3,100,4), is a safe
