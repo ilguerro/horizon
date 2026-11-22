@@ -342,3 +342,54 @@ fn a_sitting_camel_first_passenger_cannot_toggle_creative_flight() {
         "no toggle on a mount that refuses to move"
     );
 }
+
+#[test]
+#[ignore = "daily"]
+fn a_pending_auto_jump_from_walking_does_not_block_the_riders_toggle() {
+    let mut game = crate::game::native_machines::tests::server_game();
+    let (client, _server) = Pipe::pair();
+    game.connect_local(client, "FlightTest").unwrap();
+    game.remote.as_mut().unwrap().joined = true;
+    game.remote.as_mut().unwrap().first_passenger = true;
+    game.player = Some(PlayerMotion::new(game.motion, Vec3::new(0.5, 64.0, 0.5)).unwrap());
+    let kind = game.res.mob_types().get("minecraft:horse").unwrap().clone();
+    let mut horse = Mob::new(7, kind, Vec3::new(0.5, 64.0, 0.5), 0.0);
+    horse.set_saddle(Some(ItemStack::new("minecraft:saddle", 1)));
+    game.mobs.clear();
+    game.mobs.push(horse);
+    game.riding = Some(7);
+    let player = game.player.as_mut().unwrap();
+    player.may_fly = true;
+    player.flying = false;
+    // The last walking tick started an auto-jump (`LocalPlayer.autoJumpTime`
+    // is 1 and its `wasAutoJump` was set); the player boards with it pending.
+    player.auto_jump_time = 1;
+    player.was_auto_jump = true;
+
+    let press = |game: &mut Game<'_>, jump: bool| {
+        game.remote_ride(
+            Keys {
+                jump,
+                ..Default::default()
+            },
+            0,
+        )
+        .unwrap()
+    };
+    // `LocalPlayer.aiStep` still counts it down in the vehicle and its
+    // `makeJump` presses jump, which an auto-jump never toggles flight with.
+    assert!(press(&mut game, false));
+    assert!(
+        !game.player.as_ref().unwrap().flying,
+        "an auto-jump's own press never toggles flight"
+    );
+    // The countdown is spent: a manual double tap toggles again.
+    assert!(press(&mut game, false));
+    assert!(press(&mut game, true));
+    assert!(press(&mut game, false));
+    assert!(press(&mut game, true));
+    assert!(
+        game.player.as_ref().unwrap().flying,
+        "a value left by the last walking tick does not block the rider's toggle"
+    );
+}

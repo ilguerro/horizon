@@ -293,6 +293,18 @@ impl Game<'_> {
         let Some(id) = self.riding else {
             return Ok(false);
         };
+        // LocalPlayer.aiStep's pending auto-jump: `canAutoJump` needs a walking
+        // player, so one cannot start in a vehicle, but the tick after boarding
+        // still counts the last one down, presses jump (`input.makeJump`) and
+        // keeps that jump from toggling flight (`!wasAutoJump`).
+        let mut keys = keys;
+        if let Some(p) = self.player.as_mut() {
+            p.was_auto_jump = p.auto_jump_time > 0;
+            if p.was_auto_jump {
+                p.auto_jump_time -= 1;
+                keys.jump = true;
+            }
+        }
         // LocalPlayer.aiStep runs its sprint decisions in a vehicle too: `canSprint` and
         // this client's authority stand in for food (`isSprintingPossible`).
         let (can_sprint, local) = self
