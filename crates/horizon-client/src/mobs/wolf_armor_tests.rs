@@ -47,6 +47,7 @@ fn a_thorns_hit_wears_the_body_piece_it_does_not_absorb() {
     let mut test_level = crate::health::TestLevel::new(0);
     let level = &mut test_level.level();
     let mut m = wolf();
+    let before = m.health;
     assert!(m.damage(level, 24.0, thorns()), "the hit landed");
     assert_eq!(m.extra.body_damage(), 6, "max(1, 24 / 4)");
     assert_eq!(
@@ -54,7 +55,7 @@ fn a_thorns_hit_wears_the_body_piece_it_does_not_absorb() {
         None,
         "the host owes nothing at the end of the tick"
     );
-    assert!(m.health < 40.0, "the wolf took the hit: {}", m.health);
+    assert!(m.health < before, "the wolf took the hit: {}", m.health);
 
     let mut m = wolf();
     assert!(m.damage(level, 24.0, Damage::of(DamageKind::MobAttack)));
