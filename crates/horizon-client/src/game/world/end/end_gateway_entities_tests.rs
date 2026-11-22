@@ -211,3 +211,47 @@ fn a_moving_mob_through_an_end_gateway_keeps_its_motion() {
         .expect("the mob is still in the level");
     assert_moved(mob.position, mob.velocity, Vec3::new(0.1, 0.0, 0.0));
 }
+
+/// A primed TNT whose exit has not loaded yet keeps its fuse: it must not
+/// burn it, and explode, at the source gateway while it waits.
+#[test]
+#[ignore = "daily"]
+fn primed_tnt_holds_its_fuse_while_its_exit_loads() {
+    let mut game = world();
+    // The exit's chunk is not there yet.
+    let exit_chunk = (EXIT[0] >> 4, EXIT[2] >> 4);
+    game.world.chunks.remove(&exit_chunk);
+    game.add_primed_tnt(
+        BlockPos::new(GATEWAY[0], GATEWAY[1], GATEWAY[2]),
+        0.0,
+        1,
+        None,
+        None,
+    );
+    let id = game.next_entity;
+    through(&mut game);
+    assert!(game.waiting_at_gateway(id), "the TNT waits for its exit");
+    let i = game
+        .tnts
+        .iter()
+        .position(|t| t.id == id)
+        .expect("the TNT is still in the level");
+    game.tick_one_tnt(i, &[]).unwrap();
+    let tnt = game
+        .tnts
+        .iter()
+        .find(|t| t.id == id)
+        .expect("it did not explode at the source");
+    assert_eq!(tnt.fuse, 1, "its fuse is held while it waits");
+    // The exit loads: the TNT arrives where the gateway leads, still alive.
+    game.world
+        .chunks
+        .insert(exit_chunk, Arc::new(Chunk::empty(exit_chunk.0, exit_chunk.1)));
+    game.resolve_end_gateway_arrivals().unwrap();
+    let tnt = game
+        .tnts
+        .iter()
+        .find(|t| t.id == id)
+        .expect("it arrived alive");
+    assert_eq!(tnt.position, exit());
+}

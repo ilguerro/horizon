@@ -197,6 +197,11 @@ impl Game<'_> {
     /// `i` is its place in the list; the caller has checked it is ticking.
     /// `entities` are the boxes that stop its move (`Game::item_entity_collisions`).
     pub(super) fn tick_one_tnt(&mut self, i: usize, entities: &[Aabb]) -> Result<()> {
+        // A live gateway traveller waits at its exit: it holds its fuse there
+        // instead of burning it (and exploding) at the source gateway.
+        if self.waiting_at_gateway(self.tnts[i].id) {
+            return Ok(());
+        }
         let t = &mut self.tnts[i];
         let (tops, landed) = t.tick_among(
             &self.world,

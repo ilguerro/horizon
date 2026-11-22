@@ -1728,6 +1728,16 @@ impl Game<'_> {
         }
     }
 
+    /// Whether `id` waits at an End gateway's exit as a live traveller. It
+    /// stays in the level while the exit loads, but must not tick there: a
+    /// primed TNT would burn its fuse and explode at the source gateway.
+    pub(super) fn waiting_at_gateway(&self, id: u32) -> bool {
+        self.end
+            .arrivals
+            .iter()
+            .any(|a| matches!(a.traveller, Arriving::Live(waiting) if waiting == id))
+    }
+
     /// `Entity.teleportToPortalDestination` for an entity that goes through an
     /// End gateway: an ordinary same-level entity stays live while the exit loads.
     fn send_through_gateway(&mut self, id: u32, gateway: BlockPos) {

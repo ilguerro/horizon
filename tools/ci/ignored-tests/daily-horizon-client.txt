@@ -22,6 +22,7 @@ horizon-client game::end::gateway_entity_tests::a_falling_block_through_an_end_g
 horizon-client game::end::gateway_entity_tests::a_moving_mob_through_an_end_gateway_keeps_its_motion lib daily resources
 horizon-client game::end::gateway_entity_tests::an_arrow_through_an_end_gateway_keeps_its_motion lib daily resources
 horizon-client game::end::gateway_entity_tests::an_experience_orb_through_an_end_gateway_keeps_its_motion lib daily resources
+horizon-client game::end::gateway_entity_tests::primed_tnt_holds_its_fuse_while_its_exit_loads lib daily resources
 horizon-client game::end::gateway_entity_tests::primed_tnt_through_an_end_gateway_keeps_its_motion lib daily resources
 horizon-client game::entity_sections::tests::a_real_mob_tick_tells_inside_each_position_write lib daily resources
 horizon-client game::equip_answers::tests::an_unpreparable_listening_stack_refuses_instead_of_using_the_data_answer lib daily resources
