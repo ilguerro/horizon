@@ -129,7 +129,7 @@ fn switch(game: &mut Game<'_>, mode: &str) -> i32 {
 /// `DefaultGameModeCommands.setMode` returns `enforceGameTypeForPlayers`'s
 /// count: a dedicated server that forces its mode switches every player.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn default_gamemode_reports_the_players_it_switched() {
     let mut game = game(false, true, false, false);
     assert_eq!(switch(&mut game, "survival"), 2);
@@ -142,7 +142,7 @@ fn default_gamemode_reports_the_players_it_switched() {
 /// `IntegratedServer.getForcedGameType` is null until the world is published:
 /// the default mode changes, no player does, and the command reports 0.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn default_gamemode_leaves_players_alone_until_the_world_is_published() {
     let mut game = game(true, true, false, false);
     assert_eq!(switch(&mut game, "survival"), 0);
@@ -154,7 +154,7 @@ fn default_gamemode_leaves_players_alone_until_the_world_is_published() {
 /// their own mode (`IntegratedServer.updateGameModeBasedOnPermission`), and
 /// reports only them.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn default_gamemode_forces_the_guests_of_a_published_world() {
     let mut game = game(true, true, false, true);
     assert_eq!(switch(&mut game, "survival"), 1);
@@ -164,7 +164,7 @@ fn default_gamemode_forces_the_guests_of_a_published_world() {
 /// `IntegratedServer.getForcedGameType` is null in a hardcore world, even
 /// published: the mode changes and nobody is switched.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn default_gamemode_does_not_force_a_hardcore_world() {
     let mut game = game(true, true, true, true);
     assert_eq!(switch(&mut game, "survival"), 0);
@@ -175,7 +175,7 @@ fn default_gamemode_does_not_force_a_hardcore_world() {
 /// (`getPlayerOrException`): a source without one fails, and an explicit
 /// target still works from it.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn gamemode_needs_a_player_source() {
     let mut game = game(false, false, false, false);
     let server = game.server_source();
@@ -194,7 +194,7 @@ fn gamemode_needs_a_player_source() {
 /// (`MinecraftServer.enforceGameTypeForPlayers` walks every player): when
 /// their command's turn ends they keep the new mode.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn default_gamemode_forces_the_player_who_ran_it() {
     let mut game = game(false, true, false, false);
     let (ok, _) = game
