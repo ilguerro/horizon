@@ -248,9 +248,10 @@ struct WorkerShared {
 /// are checked as it is kept.
 struct Tiles {
     kept: TileCache,
-    /// The tiles being sampled, with the players who asked for one of them
-    /// meanwhile (connection and request id): they get its reply too.
-    sampling: HashMap<Sampling, Vec<(u32, u32)>>,
+    /// The tiles being sampled: where the save's changes stood as each one
+    /// started, and the players who asked for it meanwhile (connection and
+    /// request id), who get its reply too.
+    sampling: HashMap<Sampling, (Option<u64>, Vec<(u32, u32)>)>,
 }
 /// A tile being sampled: its level, its source's address and the request's
 /// shape.
@@ -332,8 +333,17 @@ impl WorkerShared {
                 r.stride,
                 r.approximate,
             );
+            // The save's changes from here: one over the tile while it is
+            // sampled may have been read before it, and taken off the
+            // kept tiles (`follow`) by another thread before this one keeps
+            // it. Taken under the lock, where another request may join it.
+            let start;
+            // This thread samples a tile another one samples too: it doesn't
+            // answer that one's players, nor end its sampling.
+            let mut alone = false;
             {
                 let mut tiles = lock(&self.tiles);
+                start = job.save.as_ref().map(|save| save.far_changes().end());
                 if let Some(save) = &job.save {
                     tiles.kept.follow(&job.level, &job.source, save);
                 }
@@ -347,21 +357,24 @@ impl WorkerShared {
                     continue;
                 }
                 match tiles.sampling.entry(key.clone()) {
-                    // Another thread samples it: its reply answers this one too.
-                    std::collections::hash_map::Entry::Occupied(mut waiting) => {
-                        waiting.get_mut().push((job.conn, r.id));
-                        continue;
+                    // Another thread samples it: its reply answers this one
+                    // too, unless a chunk under it was saved since that
+                    // sampling started, which may have read it before.
+                    std::collections::hash_map::Entry::Occupied(mut sampling) => {
+                        let (started, waiting) = sampling.get_mut();
+                        let stale = (job.save.as_ref().zip(*started))
+                            .is_some_and(|(save, started)| cache::changed_under(save, started, &r));
+                        if !stale {
+                            waiting.push((job.conn, r.id));
+                            continue;
+                        }
+                        alone = true;
                     }
                     std::collections::hash_map::Entry::Vacant(free) => {
-                        free.insert(Vec::new());
+                        free.insert((start, Vec::new()));
                     }
                 }
             }
-            // The save's changes from here: one over the tile while it is
-            // sampled may have been read before it, and taken off the
-            // kept tiles (`follow`) by another thread before this one keeps
-            // it.
-            let start = job.save.as_ref().map(|save| save.far_changes().end());
             // A sampler that panics is dropped, and the tile refused
             // (not kept): every job gets a reply, which frees its slot.
             let mut sampled = false;
@@ -400,7 +413,11 @@ impl WorkerShared {
                 if sampled && !changed {
                     tiles.kept.put(&job.level, &job.source, &r, &tile);
                 }
-                tiles.sampling.remove(&key).unwrap_or_default()
+                if alone {
+                    Vec::new()
+                } else {
+                    tiles.sampling.remove(&key).unwrap_or_default().1
+                }
             };
             let mut done = lock(&self.done);
             for (conn, id) in waiting {
@@ -771,6 +788,21 @@ mod tests {
         }
     }
 
+    /// How many threads sample behind `gate`, once `at_least` do (waiting up
+    /// to 10 s).
+    fn sampling(gate: &Gate, at_least: usize) -> usize {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut state = lock(&gate.state);
+        while state.1 < at_least && Instant::now() < deadline {
+            state = gate
+                .changed
+                .wait_timeout(state, Duration::from_millis(5))
+                .unwrap()
+                .0;
+        }
+        state.1
+    }
+
     #[test]
     fn a_second_thread_samples_only_once_a_tile_waited_too_long() {
         let now = Instant::now();
@@ -793,25 +825,13 @@ mod tests {
                 request,
             });
         };
-        let sampling = |at_least: usize| {
-            let deadline = Instant::now() + Duration::from_secs(10);
-            let mut state = lock(&gate.state);
-            while state.1 < at_least && Instant::now() < deadline {
-                state = gate
-                    .changed
-                    .wait_timeout(state, Duration::from_millis(5))
-                    .unwrap()
-                    .0;
-            }
-            state.1
-        };
         // The first thread samples one tile; the next one waits for it.
         push(&mut service, 0);
-        assert_eq!(sampling(1), 1);
+        assert_eq!(sampling(&gate, 1), 1);
         let pushed = Instant::now();
         push(&mut service, 1);
         // The second thread takes it, but only once it has waited too long.
-        assert_eq!(sampling(2), 2);
+        assert_eq!(sampling(&gate, 2), 2);
         assert!(pushed.elapsed() >= BEHIND);
         drop(opens);
         assert_eq!(replies(&mut service, 2).len(), 2);
@@ -881,5 +901,90 @@ mod tests {
             [true, false]
         );
         assert_eq!(service.players[&1].in_flight, 0);
+    }
+
+    /// Flat terrain `height` blocks over 60.
+    struct Plain(i32);
+    impl LodSampler for Plain {
+        fn sample(&mut self, _: i32, _: i32) -> Option<crate::lod::Surface> {
+            Some(crate::lod::Surface {
+                height: 60 + self.0,
+                state: horizon_world::registry::BlockStateId(1),
+                water: None,
+                biome: 0,
+            })
+        }
+    }
+    /// `Gated` terrain as it was when its sampling started: the height
+    /// stands for a saved chunk under the tile.
+    struct Dated(Arc<Gate>, Arc<std::sync::atomic::AtomicI32>);
+    impl LodSampler for Dated {
+        fn sample(&mut self, _: i32, _: i32) -> Option<crate::lod::Surface> {
+            None
+        }
+        fn grid(&mut self, x: i32, z: i32, stride: i32, side: usize) -> Vec<crate::lod::Column> {
+            let height = self.1.load(std::sync::atomic::Ordering::SeqCst);
+            Gated(self.0.clone()).grid(x, z, stride, side);
+            Plain(height).grid(x, z, stride, side)
+        }
+    }
+    impl LodSource for Dated {
+        fn sampler(self: Arc<Self>) -> Box<dyn LodSampler> {
+            Box::new(Dated(self.0.clone(), self.1.clone()))
+        }
+    }
+
+    #[test]
+    fn a_tile_asked_for_after_a_chunk_under_it_was_saved_is_sampled_anew() {
+        let dir = std::env::temp_dir().join(format!("horizon-far-joined-{}", std::process::id()));
+        let save = Arc::new(crate::save::SaveDir::new(
+            dir.clone(),
+            crate::chunk::LevelShape::OVERWORLD,
+        ));
+        let now = Instant::now();
+        let mut service = Service::new(64, 2, Vec::new());
+        let gate = Arc::new(Gate::default());
+        // Dropped before the service, also as a failed assertion unwinds.
+        let opens = Opens(gate.clone());
+        let height = Arc::new(std::sync::atomic::AtomicI32::new(0));
+        let source: Arc<dyn LodSource> = Arc::new(Dated(gate.clone(), height.clone()));
+        let push = |service: &mut Service, conn: u32| {
+            let Verdict::Serve(request) =
+                service.request(conn, &request(conn, -16), [0.0; 3], true, now)
+            else {
+                panic!("served");
+            };
+            service.push(Job {
+                conn,
+                level: "minecraft:overworld".into(),
+                source: source.clone(),
+                save: Some(save.clone()),
+                request,
+            });
+        };
+        // The first player's tile is sampled from chunk (-1, 0) as it was.
+        push(&mut service, 1);
+        assert_eq!(sampling(&gate, 1), 1);
+        // The chunk is saved changed, then a second player asks for the tile:
+        // it is sampled anew, not answered by the sampling that read the
+        // chunk before.
+        height.store(1, std::sync::atomic::Ordering::SeqCst);
+        save.clear_chunks(&[(-1, 0)]).unwrap();
+        push(&mut service, 2);
+        assert_eq!(sampling(&gate, 2), 2);
+        drop(opens);
+        let mut got = replies(&mut service, 2);
+        got.sort();
+        let tile = |id: u32, height: i32| {
+            let columns = Plain(height).grid(-16, 0, 1, SIDE);
+            (
+                id,
+                "minecraft:overworld".to_owned(),
+                encode_reply(id, Some(&columns), &[]),
+            )
+        };
+        assert_eq!(got, [tile(1, 0), tile(2, 1)]);
+        drop(service);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
