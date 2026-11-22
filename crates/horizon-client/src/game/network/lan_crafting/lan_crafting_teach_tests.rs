@@ -6,7 +6,7 @@ use horizon_protocol::packets::{configuration::ClientInformation, play::Containe
 use std::sync::{Arc, atomic::AtomicI32, mpsc};
 
 /// A server game with one placed guest, or None without prepared resources.
-fn guest_server() -> Option<Game<'static>> {
+fn crafting_guest_server() -> Option<Game<'static>> {
     std::env::var_os("HORIZON_TEST_RESOURCES")?;
     let mut game = crate::game::native_machines::tests::server_game();
     game.build_registries();
@@ -64,7 +64,7 @@ fn guest_server() -> Option<Game<'static>> {
     Some(game)
 }
 
-fn click(game: &mut Game<'_>, button: i8, input: i32) -> bool {
+fn click_result(game: &mut Game<'_>, button: i8, input: i32) -> bool {
     game.lan_inventory_click(
         2,
         &ContainerClick {
@@ -79,7 +79,7 @@ fn click(game: &mut Game<'_>, button: i8, input: i32) -> bool {
     )
 }
 
-fn prepare(game: &mut Game<'_>, logs: u32) {
+fn prepare_grid(game: &mut Game<'_>, logs: u32) {
     game.lan.as_mut().unwrap().hub.guests.update(0, |g| {
         g.craft_grid = [
             Some(ItemStack::new("minecraft:oak_log", logs)),
@@ -106,16 +106,16 @@ fn crafted(game: &Game<'_>) -> i32 {
 /// and is queued for `ClientboundRecipeBookAddPacket`.
 #[test]
 fn a_guest_take_teaches_the_recipe_and_counts_the_amount_taken() {
-    let Some(mut game) = guest_server() else {
+    let Some(mut game) = crafting_guest_server() else {
         return;
     };
-    prepare(&mut game, 1);
+    prepare_grid(&mut game, 1);
     assert!(
         !game.lan.as_ref().unwrap().hub.guests[0]
             .recipe_book
             .knows("minecraft:oak_planks")
     );
-    assert!(click(&mut game, 0, 0));
+    assert!(click_result(&mut game, 0, 0));
     let g = &game.lan.as_ref().unwrap().hub.guests[0];
     assert_eq!(g.carried.as_ref().map(|s| s.count), Some(4));
     assert!(g.recipe_book.knows("minecraft:oak_planks"));
@@ -128,8 +128,8 @@ fn a_guest_take_teaches_the_recipe_and_counts_the_amount_taken() {
     assert_eq!(crafted(&game), 4);
 
     // A right click takes all four planks but counts half of them.
-    prepare(&mut game, 1);
-    assert!(click(&mut game, 1, 0));
+    prepare_grid(&mut game, 1);
+    assert!(click_result(&mut game, 1, 0));
     assert_eq!(
         game.lan.as_ref().unwrap().hub.guests[0]
             .carried
@@ -140,8 +140,8 @@ fn a_guest_take_teaches_the_recipe_and_counts_the_amount_taken() {
     assert_eq!(crafted(&game), 6);
 
     // A shift click moves the four planks and counts all four.
-    prepare(&mut game, 1);
-    assert!(click(&mut game, 0, 1));
+    prepare_grid(&mut game, 1);
+    assert!(click_result(&mut game, 0, 1));
     let planks: u32 = game.lan.as_ref().unwrap().hub.guests[0]
         .inventory
         .iter()
