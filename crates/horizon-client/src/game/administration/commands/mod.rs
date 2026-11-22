@@ -3911,6 +3911,15 @@ impl Game<'_> {
         ));
         Ok(count as i32)
     }
+    /// `SayCommand.register`: resolve the source name and broadcast unsigned announcements.
+    /// `/me` and `/msg` go through it too; `say.rs` has the lines they send.
+    fn cmd_say(&mut self, id: &str, ctx: &Context) -> R<i32> {
+        if id == "say" || id == "me" {
+            self.say_emote_lines(id, ctx)
+        } else {
+            self.whisper_lines(ctx)
+        }
+    }
     /// MessageArgument: `@p`-style selectors in a message become names.
     pub(super) fn expand_selectors(&mut self, raw: &str) -> Text {
         let mut out = Text::empty();
