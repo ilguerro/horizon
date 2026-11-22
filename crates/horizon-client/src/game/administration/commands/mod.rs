@@ -983,7 +983,7 @@ impl Game<'_> {
                 let Some(Arg::GameMode(m)) = ctx.get("gamemode") else {
                     return Ok(0);
                 };
-                let count = self.set_default_game_mode(match m {
+                let count = self.set_default_game_mode_counting(match m {
                     horizon_client::command::args::GameMode::Survival => 0,
                     horizon_client::command::args::GameMode::Creative => 1,
                     horizon_client::command::args::GameMode::Adventure => 2,

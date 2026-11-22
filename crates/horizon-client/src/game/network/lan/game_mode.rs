@@ -24,7 +24,7 @@ pub(super) fn forced_game_type(config: &HubConfig, published: bool, hardcore: bo
 /// override). The guest `acting` (whose turn it is, `acting_mode` theirs) is
 /// left to the caller: their state is the game's until the turn ends. Whether
 /// it switches them, and how many it switched.
-fn enforce_guest_game_mode(
+pub(super) fn enforce_guest_game_modes(
     host: &mut LanHost,
     mode: i32,
     acting: Option<(u32, i32)>,
@@ -63,7 +63,7 @@ impl Game<'_> {
     /// The world's default game mode (`MinecraftServer.setDefaultGameType`)
     /// and, with the mode forced, the players it switches
     /// (`DefaultGameModeCommands.setMode`). How many it switched.
-    pub(in crate::game) fn set_default_game_mode(&mut self, mode: i32) -> i32 {
+    pub(in crate::game) fn set_default_game_mode_counting(&mut self, mode: i32) -> i32 {
         self.level.game_mode = mode;
         self.level.creative = mode == 1;
         if let Some(host) = self.lan.as_mut() {
@@ -89,7 +89,7 @@ impl Game<'_> {
         let Some(mode) = mode else {
             return 0;
         };
-        self.enforce_guest_game_mode(mode)
+        self.enforce_guest_modes(mode)
     }
 
     /// `IntegratedServer.updateGameModeBasedOnPermission`: with the mode
@@ -99,35 +99,23 @@ impl Game<'_> {
         let Some(mode) = self.lan.as_ref().map(|h| h.hub.config.default_game_mode) else {
             return 0;
         };
-        self.enforce_guest_game_mode(mode)
+        self.enforce_guest_modes(mode)
     }
 
     /// `enforce_guest_game_mode`, the guest whose turn it is included: a
     /// command's player is one of the players online, and changes mode as
     /// `/gamemode` changes theirs (`ServerPlayer.setGameMode`), so that the
     /// end of the turn keeps it. How many it switched.
-    fn enforce_guest_game_mode(&mut self, mode: i32) -> i32 {
+    fn enforce_guest_modes(&mut self, mode: i32) -> i32 {
         let acting = self.lan_acting.map(|conn| (conn, self.mode_id()));
         let Some(host) = self.lan.as_mut() else {
             return 0;
         };
         let (acting_switched, count) =
-            enforce_guest_game_mode(host, mode, acting, &self.world, self.collision);
+            enforce_guest_game_modes(host, mode, acting, &self.world, self.collision);
         if acting_switched {
             self.set_mode(super::super::game_mode::mode_from_id(mode));
         }
         count
-    }
-
-    /// `IntegratedServer.setForceGameMode`: the players take the mode when it
-    /// is turned on.
-    pub(in crate::game) fn set_force_game_mode(&mut self, force: bool) {
-        let Some(host) = self.lan.as_mut() else {
-            return;
-        };
-        host.settings.force_game_mode = force;
-        host.hub.config.force_game_mode = force;
-        let mode = host.hub.config.default_game_mode;
-        self.enforce_guest_game_mode(mode);
     }
 }

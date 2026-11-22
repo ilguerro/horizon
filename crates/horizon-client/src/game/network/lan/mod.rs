@@ -37,11 +37,13 @@ use horizon_client::{
     },
     mobs::{Mob, Species, Who, leash::Holder},
     text::Text,
+    world::World,
 };
 use horizon_protocol::{
     entity_data::{Value, serializer},
     packets::play::{self, Clientbound as C},
 };
+use horizon_world::block_collision::BlockCollisionRegistry;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
 /// The settings of the open world (WorldOptionsScreen's multiplayer section).
@@ -1066,6 +1068,22 @@ pub const HELP: &[&str] = &[
     "lan status                     the hosting state and the guests",
 ];
 
+/// With the game mode forced, the guests online take the default mode
+/// (setting a mode does nothing when it is already theirs). A world open to
+/// LAN is an integrated server, which leaves out the players who have game
+/// master permission; a dedicated server does not.
+fn enforce_guest_game_mode(
+    host: &mut LanHost,
+    world: &World,
+    collision: &BlockCollisionRegistry<'_>,
+) {
+    if !host.hub.config.force_game_mode {
+        return;
+    }
+    let mode = host.hub.config.default_game_mode;
+    game_mode::enforce_guest_game_modes(host, mode, None, world, collision);
+}
+
 impl Game<'_> {
     /// The level's default point, independently of the acting player's bed or spawnpoint.
     pub(super) fn world_spawn_position(&self) -> [f64; 3] {
@@ -1707,6 +1725,20 @@ impl Game<'_> {
         }
         self.lan = Some(host);
         stored.map(|name| (uuid, name))
+    }
+
+    /// The world's default game mode (`defaultgamemode`).
+    pub(super) fn set_default_game_mode(&mut self, mode: i32) {
+        self.set_default_game_mode_counting(mode);
+    }
+
+    /// Apply the default mode to connected players when forcing it is enabled.
+    pub(super) fn set_force_game_mode(&mut self, force: bool) {
+        if let Some(host) = self.lan.as_mut() {
+            host.settings.force_game_mode = force;
+            host.hub.config.force_game_mode = force;
+            enforce_guest_game_mode(host, &self.world, self.collision);
+        }
     }
 
     /// Update the live view distance used for player chunk tracking.
