@@ -1094,16 +1094,20 @@ impl Game<'_> {
         self.chunks_loaded_around(around, reach)
     }
 
-    /// TheEndGatewayBlockEntity.findTallestBlock.
+    /// TheEndGatewayBlockEntity.findTallestBlock: the level's own build height
+    /// (`Level.getMaxY()` down to `Level.getMinY()`), which outside the End is
+    /// not 255 to 1.
     fn tallest_block(&self, around: [i32; 3], dist: i32, allow_bedrock: bool) -> [i32; 3] {
+        let min_y = self.world.shape.min_y;
+        let max_y = min_y + self.world.shape.height - 1;
         let mut tallest: Option<[i32; 3]> = None;
         for xd in -dist..=dist {
             for zd in -dist..=dist {
                 if xd == 0 && zd == 0 && !allow_bedrock {
                     continue;
                 }
-                let floor = tallest.map_or(0, |t| t[1]);
-                let mut y = 255;
+                let floor = tallest.map_or(min_y, |t| t[1]);
+                let mut y = max_y;
                 while y > floor {
                     let p = [around[0] + xd, y, around[2] + zd];
                     let f = self.res.facts().get(self.world.block(p[0], p[1], p[2]));

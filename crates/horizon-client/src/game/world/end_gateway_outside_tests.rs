@@ -6,10 +6,12 @@
 use crate::game::Dim;
 use crate::game::end::GatewayJob;
 use crate::game::native_machines::tests::server_game;
-use horizon_client::containers::BlockEntity;
+use horizon_client::chunk::Chunk;
+use horizon_client::containers::{BlockEntity, EndGateway};
 use horizon_client::entities::ItemEntity;
 use horizon_client::items::ItemStack;
 use horizon_core::geometry::Vec3;
+use std::sync::Arc;
 
 #[test]
 #[ignore = "daily"]
@@ -58,6 +60,11 @@ fn an_item_in_a_gateway_outside_the_end_still_enters_it() {
         game.end.gateways.get(&1).is_some_and(|t| t.cooldown() > 0),
         "the item's portal cooldown is set even without a destination"
     );
+    assert_eq!(
+        game.gateway_job([8, 64, 8]).0,
+        GatewayJob::NoDestination,
+        "getPortalPosition creates no exit outside the End"
+    );
 }
 
 #[test]
@@ -76,6 +83,66 @@ fn a_data_less_gateway_in_the_outer_end_searches_outward() {
     );
     assert!((target.x - 1024.0).abs() < 1e-9, "{target:?}");
     assert_eq!((target.y, target.z), (75.0, 0.0));
+}
+
+/// `findExitPosition`'s `findTallestBlock` reads the destination level's own
+/// build height (`Level.getMaxY()` down to `Level.getMinY()`): a configured
+/// non-exact exit outside the End lands above a block above y = 255, and above
+/// one below y = 1, instead of on the fallback a fixed Y = 255..1 scan returns.
+#[test]
+#[ignore = "daily"]
+fn a_non_exact_exit_outside_the_end_searches_the_levels_own_height() {
+    let mut game = server_game();
+    game.dim = Dim::Overworld;
+    // findExitPosition reads 5 blocks around the exit: chunks (12, -1) and (12, 0).
+    for c in [(12, -1), (12, 0)] {
+        game.world.chunks.insert(c, Arc::new(Chunk::empty(c.0, c.1)));
+    }
+    let stone = game
+        .pack
+        .assets
+        .registry
+        .default_state("minecraft:stone")
+        .unwrap();
+    let air = game
+        .pack
+        .assets
+        .registry
+        .default_state("minecraft:air")
+        .unwrap();
+    let exit = [200, 75, 0];
+    let gateway = game
+        .pack
+        .assets
+        .registry
+        .default_state("minecraft:end_gateway")
+        .unwrap();
+    game.world.set(0, 64, 0, gateway).unwrap();
+    game.world
+        .block_entities
+        .insert((0, 64, 0), BlockEntity::EndGateway(EndGateway {
+            exit_portal: Some(exit),
+            exact_teleport: false,
+            ..Default::default()
+        }));
+    let (job, target) = game.gateway_job([0, 64, 0]);
+    assert_eq!(job, GatewayJob::Known { exit, exact: false });
+
+    // The Overworld's build height is -64 to 319.
+    game.world.set(199, 300, -2, stone).unwrap();
+    assert_eq!(
+        game.resolve_gateway(job, target).ok(),
+        Some(Some(Vec3::new(199.5, 301.0, -1.5))),
+        "the landing is above the tallest block, above y = 255"
+    );
+    game.world.set(199, 300, -2, air).unwrap();
+
+    game.world.set(201, -40, 2, stone).unwrap();
+    assert_eq!(
+        game.resolve_gateway(job, target).ok(),
+        Some(Some(Vec3::new(201.5, -39.0, 2.5))),
+        "the landing is above the tallest block, below y = 1"
+    );
 }
 
 #[test]
