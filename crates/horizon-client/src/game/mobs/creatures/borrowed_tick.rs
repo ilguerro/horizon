@@ -202,21 +202,6 @@ impl Game<'_> {
                 let mut cached_difficulty: Option<((i32, i32), spawning::LocalDifficulty)> = None;
                 while cursor < original_len {
                     let slot = cursor;
-                    // A cloud that joined before this mob doses it now, at its place in the join
-                    // order (`potions/cloud_tick.rs`). A resumed pass has no dose left to give.
-                    if !resuming && positions.is_none() {
-                        self.run_cloud_doses(
-                            doses,
-                            &mut level,
-                            slot,
-                            &mut mobs,
-                            &keep,
-                            (&mut snapshot, &mut grid),
-                            &mut player_credit,
-                            &mut dead,
-                            &mut died,
-                        );
-                    }
                     let i = match &positions {
                         None => slot,
                         Some(positions) => {
@@ -234,6 +219,32 @@ impl Game<'_> {
                             i
                         }
                     };
+                    // A cloud that joined before this mob doses it now, at its place in the join
+                    // order (`potions/cloud_tick.rs`): `i` is that place, and `index` the mobs'
+                    // snapshot slots. A resumed turn was dosed before its pause; the mobs after
+                    // it find theirs through the rebuilt list.
+                    if !resuming {
+                        // A panic in a dose's callback (an instant damage's hooks, a mod's
+                        // notice) unwinds the pass like one in a mob's turn.
+                        let dosed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            self.run_cloud_doses(
+                                doses,
+                                &mut level,
+                                i,
+                                &mut mobs,
+                                &index,
+                                &keep,
+                                (&mut snapshot, &mut grid),
+                                &mut player_credit,
+                                &mut dead,
+                                &mut died,
+                            );
+                        }));
+                        if let Err(payload) = dosed {
+                            dispatch_panic = Some(payload);
+                            break;
+                        }
+                    }
                     let m = &mut mobs[i];
                     let retried = retried_rider.take() == Some(m.id);
                     if blocked.contains(&m.id) {
