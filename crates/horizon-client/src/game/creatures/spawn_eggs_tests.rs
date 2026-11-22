@@ -55,7 +55,7 @@ fn target(id: u32) -> Option<InteractTarget> {
 /// volume and an adult's pitch. (A pig's ambient sound depends on the sound
 /// variant `finalizeSpawn` rolled for it; a sheep has only one.)
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn an_egg_used_on_a_block_plays_the_new_mobs_ambient_sound() {
     const POS: [i32; 3] = [2, 64, 2];
     let mut game = block_game(POS, "minecraft:stone");
@@ -93,7 +93,7 @@ fn an_egg_used_on_a_block_plays_the_new_mobs_ambient_sound() {
 /// also takes `Wolf.getBreedOffspring`'s draws from the parent's own random
 /// (the coat coin, then its voice), and the collar mix takes the level's.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn an_egg_on_your_own_wolf_gives_a_tame_pup_of_yours() {
     use horizon_core::random::{EntityRandom, LegacyRandom, RandomSource};
     let mut game = crate::game::native_machines::tests::server_game();
