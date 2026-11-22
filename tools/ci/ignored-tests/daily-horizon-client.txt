@@ -18,6 +18,9 @@ horizon-client game::crafting_recipe_kind_tests::unregistered_serializer_failed_
 horizon-client game::dedicated::tests::console_logging_survives_closed_stdout lib daily child-process
 horizon-client game::dispenser::decision_tests::crown_is_prepared_once_for_three_and_eight_dispenser_candidates lib daily resources
 horizon-client game::dragon::tests::a_fireballs_breath_cloud_starts_at_its_hit_position lib daily resources
+horizon-client game::end_gateway_outside_tests::a_data_less_gateway_in_the_outer_end_searches_outward lib daily resources
+horizon-client game::end_gateway_outside_tests::a_fast_fall_through_a_gateway_outside_the_end_is_caught lib daily resources
+horizon-client game::end_gateway_outside_tests::an_item_in_a_gateway_outside_the_end_still_enters_it lib daily resources
 horizon-client game::entity_sections::tests::a_real_mob_tick_tells_inside_each_position_write lib daily resources
 horizon-client game::equip_answers::tests::an_unpreparable_listening_stack_refuses_instead_of_using_the_data_answer lib daily resources
 horizon-client game::equip_answers::tests::local_shift_click_prepares_once_and_preserves_a_refused_helmet lib daily resources

@@ -12,7 +12,7 @@ use horizon_client::items::ItemStack;
 use horizon_core::geometry::Vec3;
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn an_item_in_a_gateway_outside_the_end_still_enters_it() {
     let mut game = server_game();
     game.dim = Dim::Overworld;
@@ -61,7 +61,7 @@ fn an_item_in_a_gateway_outside_the_end_still_enters_it() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_data_less_gateway_in_the_outer_end_searches_outward() {
     let mut game = server_game();
     game.dim = Dim::End;
@@ -79,7 +79,7 @@ fn a_data_less_gateway_in_the_outer_end_searches_outward() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_fast_fall_through_a_gateway_outside_the_end_is_caught() {
     let mut resources = None;
     let (mut game, scratch) = super::server_travel::credits_respawn_tests::server_with_a_nether_anchor(
