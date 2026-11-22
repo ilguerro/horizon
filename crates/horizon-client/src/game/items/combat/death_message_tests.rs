@@ -11,7 +11,7 @@ use horizon_core::geometry::Vec3;
 /// A tamed wolf of the local player, killed by a drowned's trident: the owner
 /// is told `death.attack.trident` ("was impaled by"), not the arrow's message.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_trident_kills_with_the_trident_message() {
     let mut game = server_game();
     game.options.dedicated = None;
@@ -66,7 +66,7 @@ fn a_trident_kills_with_the_trident_message() {
 /// is a `fall` an entity caused, as `/damage <target> minecraft:fall from
 /// <zombie>` builds one.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn two_unnamed_zombies_are_the_same_attacker() {
     let mut game = server_game();
     game.build_registries();
@@ -113,7 +113,7 @@ fn two_unnamed_zombies_are_the_same_attacker() {
 /// `bad_respawn_point` is an intentional game design: the bracketed link opens
 /// the bug tracker and shows `MCPE-28723`, on the death screen as in chat.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn the_bad_respawn_point_link_carries_its_click_and_hover() {
     let mut game = server_game();
     game.build_registries();
