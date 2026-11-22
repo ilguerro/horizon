@@ -178,7 +178,7 @@ fn capable_units_delete_only_after_the_last_game_lease_and_mixed_builds_stay_res
         let alias = root.path().join("alias");
         std::os::unix::fs::symlink(&real, &alias).unwrap();
         let mut actor = Command::new(std::env::current_exe().unwrap());
-        actor.args(["--exact", "storage::inventory::regressions::capable_units_delete_only_after_the_last_game_lease_and_mixed_builds_stay_residual"])
+        actor.args(["--include-ignored", "--exact", "storage::inventory::regressions::capable_units_delete_only_after_the_last_game_lease_and_mixed_builds_stay_residual"])
             .env("CLASSIFICATION_ROOT", &alias).env("HORIZON_LAUNCHER_HOME", alias.join("data"))
             .env("HORIZON_HOME", alias.join("data/cache"))
             .env("XDG_DATA_HOME", alias.join("xdg-data")).env("XDG_CONFIG_HOME", alias.join("xdg-config"))
@@ -262,6 +262,8 @@ fn capable_units_delete_only_after_the_last_game_lease_and_mixed_builds_stay_res
     fs::remove_dir_all(&old).unwrap();
     let command = || {
         let mut game = Command::new(&image);
+        // reexec_include_ignored: skip, the child reads these as launch arguments (`--key value` pairs), where a
+        // lone `--include-ignored` would leave the test name without a value
         game.args(["--exact", "storage::inventory::regressions::capable_units_delete_only_after_the_last_game_lease_and_mixed_builds_stay_residual"])
             .env("CLASSIFICATION_GAME", "1")
             .env("RUST_TEST_NOCAPTURE", "1")
@@ -298,4 +300,37 @@ fn capable_units_delete_only_after_the_last_game_lease_and_mixed_builds_stay_res
             .any(|entry| entry.path == install),
         "incomplete installs must stay visible for residual reporting and retry"
     );
+}
+
+#[test]
+fn a_survey_is_summed_again_without_walking_the_folder_again() {
+    let home = Home::new();
+    home.seed("a/one");
+    home.seed("a/deep/two");
+    home.seed("b/three");
+    let root = Root::open(&home.0).unwrap();
+    let entries = vec![
+        Entry::fixed(&root, Path::new("a"), Category::OtherCaches).unwrap(),
+        Entry::fixed(&root, Path::new("b"), Category::OtherCaches).unwrap(),
+    ];
+    crate::storage::SURVEYS.with(|s| s.borrow_mut().clear());
+    let surveyed: Vec<_> = entries
+        .iter()
+        .map(Entry::survey)
+        .collect::<Result<_, _>>()
+        .unwrap();
+    // The row sum, the per-unit sum and the per-unit "alone" sum, as the cleanup pass takes them.
+    let row = allocated_of(&entries, &surveyed, Category::OtherCaches);
+    let mut seen = HashSet::new();
+    let units: u64 = surveyed.iter().map(|items| sum_new(items, &mut seen)).sum();
+    let alone: u64 = surveyed
+        .iter()
+        .map(|items| sum_new(items, &mut HashSet::new()))
+        .sum();
+    let walked = crate::storage::SURVEYS.with(|s| s.borrow().clone());
+    assert_eq!(walked.len(), entries.len(), "{walked:?}");
+    assert_eq!(row, units);
+    assert_eq!(row, alone);
+    assert_eq!(row, allocated(&entries, Category::OtherCaches).unwrap());
+    assert!(row > 0);
 }
