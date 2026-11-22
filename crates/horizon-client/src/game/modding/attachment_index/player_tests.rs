@@ -188,6 +188,7 @@ fn queued_level_teleport_moves_the_player_row_and_later_writes_stay_in_the_desti
             .push(crate::game::server_travel::LevelTeleport {
                 conn: 12,
                 dim: Dim::Nether,
+                from: None,
                 at: [8.5, 70.0, 8.5],
                 rotation: None,
                 vehicle: None,

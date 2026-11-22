@@ -120,6 +120,7 @@ impl Game<'_> {
         self.level_teleports.push(LevelTeleport {
             conn,
             dim: to.dim,
+            from: None,
             at: [to.at.x, to.at.y, to.at.z],
             rotation: Some([to.yaw, to.pitch]),
             vehicle: None,

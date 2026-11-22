@@ -8,13 +8,32 @@ use horizon_client::{
 };
 use horizon_core::geometry::Vec3;
 use horizon_protocol::packets::configuration::ClientInformation;
+use mod_api::{Hooks, ModEntry, PlayerChangedDimensionEvent, ServerHost};
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicI32, AtomicUsize},
     mpsc,
 };
 
 const CONN: u32 = 9;
+
+type Heard = Arc<Mutex<Vec<(String, String)>>>;
+
+struct Recorder(Heard);
+
+#[mod_api::__subscriptions]
+impl Hooks for Recorder {
+    fn player_changed_dimension(
+        &self,
+        _: &mut dyn ServerHost,
+        event: &mut PlayerChangedDimensionEvent<'_>,
+    ) {
+        self.0
+            .lock()
+            .unwrap()
+            .push((event.from.to_owned(), event.to.to_owned()));
+    }
+}
 
 /// A server in the Overworld with one guest, alive, standing in the Nether.
 fn server_with_a_guest_in_the_nether() -> (Game<'static>, LanHost) {
@@ -85,32 +104,53 @@ fn server_with_a_guest_in_the_nether() -> (Game<'static>, LanHost) {
 /// `ThrownEnderpearl.onHit` teleports its owner with a `TeleportTransition`
 /// into the pearl's own level: a player in the Nether whose pearl lands in the
 /// Overworld comes back to the Overworld, where the pearl was, not to those
-/// coordinates in the Nether.
+/// coordinates in the Nether. The mods hear the Nether left.
 #[test]
 #[ignore = "daily"]
 fn a_pearl_in_the_overworld_takes_its_owner_out_of_the_nether() {
-    let (mut game, host) = server_with_a_guest_in_the_nether();
-    assert_eq!(game.dim, crate::game::Dim::Overworld);
-    let landed = Vec3::new(8.5, 64.0, 8.5);
-    let mut pearl = Projectile::new(ProjectileKind::EnderPearl, landed, Some(Who::Player));
-    pearl.guest = Some(CONN);
-    pearl.previous = landed;
-    game.lan = Some(host);
-    game.guest_projectile_hit(
-        CONN,
-        &pearl,
-        Hit::Block {
-            pos: [8, 63, 8],
-            at: Vec3::new(8.5, 64.0, 8.5),
-            face: [0, 1, 0],
-        },
-    )
-    .unwrap();
-    game.run_level_teleports();
-    let guest = &game.lan.as_ref().unwrap().hub.guests[0];
-    assert_eq!(
-        (guest.dimension.as_str(), guest.position),
-        ("minecraft:overworld", [8.5, 64.0, 8.5]),
-        "the owner goes to the pearl's level"
-    );
+    let heard = Heard::default();
+    let mods: mod_api::Mods = vec![ModEntry::new(
+        "dimension-recorder",
+        Box::new(Recorder(heard.clone())),
+    )]
+    .into();
+    mod_platform::testing::with_mods(mods, || {
+        let (mut game, host) = server_with_a_guest_in_the_nether();
+        assert_eq!(game.dim, crate::game::Dim::Overworld);
+        let landed = Vec3::new(8.5, 64.0, 8.5);
+        let mut pearl = Projectile::new(ProjectileKind::EnderPearl, landed, Some(Who::Player));
+        pearl.guest = Some(CONN);
+        pearl.previous = landed;
+        game.lan = Some(host);
+        game.guest_projectile_hit(
+            CONN,
+            &pearl,
+            Hit::Block {
+                pos: [8, 63, 8],
+                at: Vec3::new(8.5, 64.0, 8.5),
+                face: [0, 1, 0],
+            },
+        )
+        .unwrap();
+        game.run_level_teleports();
+        let guest = &game.lan.as_ref().unwrap().hub.guests[0];
+        assert_eq!(
+            (guest.dimension.as_str(), guest.position),
+            ("minecraft:overworld", [8.5, 64.0, 8.5]),
+            "the owner goes to the pearl's level"
+        );
+        // The owner left the Nether, so the move ends as a dimension change.
+        for _ in 0..20 {
+            if !game.on_server_trip(CONN) {
+                break;
+            }
+            game.tick_server_travel();
+        }
+        assert!(!game.on_server_trip(CONN), "the move never ended");
+        assert_eq!(
+            *heard.lock().unwrap(),
+            [("minecraft:the_nether".to_owned(), "minecraft:overworld".to_owned())],
+            "the mods hear the Nether left"
+        );
+    });
 }

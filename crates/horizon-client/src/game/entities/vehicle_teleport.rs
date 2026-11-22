@@ -570,6 +570,7 @@ impl Game<'_> {
                     .push(super::server_travel::LevelTeleport {
                         conn,
                         dim: destination,
+                        from: None,
                         at,
                         rotation: Some(rotation),
                         vehicle: restored_objects.by_source.get(&mount).copied(),

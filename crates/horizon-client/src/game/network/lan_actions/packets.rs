@@ -1284,6 +1284,7 @@ impl Game<'_> {
                 .push(crate::game::server_travel::LevelTeleport {
                     conn: own,
                     dim,
+                    from: None,
                     at,
                     rotation: Some([yaw, pitch]),
                     vehicle: None,

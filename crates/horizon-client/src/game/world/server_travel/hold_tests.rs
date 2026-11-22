@@ -238,6 +238,7 @@ fn a_command_arrival_holds_movement_until_lit_then_ticks_damage_again() {
     game.level_teleports.push(LevelTeleport {
         conn: CONN,
         dim: game.dim,
+        from: None,
         at,
         rotation: None,
         vehicle: None,

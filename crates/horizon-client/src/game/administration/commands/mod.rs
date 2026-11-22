@@ -1818,6 +1818,7 @@ impl Game<'_> {
             .push(super::server_travel::LevelTeleport {
                 conn,
                 dim: level,
+                from: None,
                 at: pos,
                 rotation,
                 vehicle: None,

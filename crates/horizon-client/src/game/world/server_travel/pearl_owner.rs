@@ -29,16 +29,17 @@ impl Game<'_> {
     /// in place): `player.teleport` to `to`, then `hurtServer(enderPearl, 5)`
     /// (`damage`, as the mods left it) and the teleport sound at `to`.
     pub(in super::super) fn pearl_takes_owner(&mut self, to: Vec3, damage: f32) {
-        let away = OWNER_LEVEL
-            .with(Cell::get)
-            .filter(|level| *level != self.dim);
-        if let (Some(conn), Some(_)) = (self.lan_acting, away) {
+        let owner = OWNER_LEVEL.with(Cell::get);
+        let away = owner.filter(|level| *level != self.dim);
+        if let (Some(conn), Some(owner)) = (self.lan_acting, away) {
             // Into the pearl's level: a new body there, out of its vehicle and
             // with no fall distance or motion (`run_level_teleports`); the
-            // rotation is the player's own (`Relative.ROTATION`).
+            // rotation is the player's own (`Relative.ROTATION`). The owner
+            // leaves their own level, not the one in place.
             self.level_teleports.push(LevelTeleport {
                 conn,
                 dim: self.dim,
+                from: Some(owner),
                 at: [to.x, to.y, to.z],
                 rotation: None,
                 vehicle: None,

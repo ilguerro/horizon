@@ -614,6 +614,7 @@ pub(in crate::game) mod tests {
             .push(crate::game::server_travel::LevelTeleport {
                 conn: 2,
                 dim,
+                from: None,
                 at,
                 rotation: None,
                 vehicle: None,

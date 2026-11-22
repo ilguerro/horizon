@@ -213,6 +213,9 @@ fn take_vehicle<
 pub(super) struct LevelTeleport {
     pub conn: u32,
     pub dim: Dim,
+    /// The level the player leaves, when it is not the one in place: a pearl's
+    /// owner, whose pearl landed in another level (`ThrownEnderpearl.onHit`).
+    pub from: Option<Dim>,
     pub at: [f64; 3],
     pub rotation: Option<[f32; 2]>,
     /// `TeleportTransition.asPassenger`: the vehicle already moved with its tree.
@@ -1106,6 +1109,7 @@ impl Game<'_> {
         self.level_teleports.push(LevelTeleport {
             conn,
             dim: Dim::Overworld,
+            from: None,
             at,
             rotation: None,
             vehicle: None,
@@ -1500,7 +1504,10 @@ impl Game<'_> {
             let Some(i) = host.hub.guests.iter().position(|g| g.conn == t.conn) else {
                 continue;
             };
-            let source = self.dim;
+            // The level in place comes back once the move is made; `source` is
+            // the level the player leaves, their own for a pearl's owner.
+            let place = self.dim;
+            let source = t.from.unwrap_or(place);
             if t.dim != source {
                 drop_hook(host, t.conn);
             }
@@ -1568,8 +1575,8 @@ impl Game<'_> {
                 hold: true,
                 left: Some(source),
             });
-            if let Err(e) = self.enter_level(source) {
-                log::error!("could not reopen {}: {e}", source.id());
+            if let Err(e) = self.enter_level(place) {
+                log::error!("could not reopen {}: {e}", place.id());
             }
         }
     }
