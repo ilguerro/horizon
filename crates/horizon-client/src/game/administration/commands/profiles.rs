@@ -7,7 +7,7 @@
 //! Also `/stop`, `/save-all`, `/save-off` and `/save-on` (StopCommand,
 //! SaveAllCommand, SaveOffCommand, SaveOnCommand), on the switches the lists
 //! share.
-use super::{Arg, Context, Game, R, Target, command_host::profiles::ListsTarget, err};
+use super::{Arg, Context, DeferredSaveAll, Game, R, Target, command_host::profiles::ListsTarget, err};
 use horizon_client::{
     server::user_lists::{BanEntry, NameAndId, OpEntry},
     text::Text,
@@ -63,30 +63,39 @@ impl Game<'_> {
     }
 
     /// `cmd_save_all` for a guest, once their turn ended and their own state
-    /// is back in their record (`run_guest_command`): the success line to them
-    /// and to the other operators, or the `ERROR_FAILED` only to them. Returns
-    /// the command's result.
+    /// is back in their record (`run_guest_command`): the success line to each
+    /// source and to the other operators, or the `ERROR_FAILED` only to them.
+    /// The turn's one save answers every `/save-all` that ran in it, each with
+    /// the feedback it decided when it ran. Returns the command's result.
     pub(in crate::game) fn finish_deferred_save_all(
         &mut self,
-        (who, silent): (Text, bool),
+        deferred: Vec<DeferredSaveAll>,
         lines: &mut Vec<Text>,
     ) -> bool {
         let reply = self.save_all_reply();
         let saved = reply.translation_key() == Some("commands.save.success");
-        // sendSuccess(line, true): a silent source sends nothing; else the
-        // source hears it when it takes success feedback
-        // (`send_command_feedback`), the operators always, and a dedicated
-        // server's console logs it (`log_admin_commands`).
-        if !silent {
+        for run in deferred {
+            // sendSuccess(line, true): a silent source sends nothing; else the
+            // source hears it when it takes success feedback
+            // (`send_command_feedback`), the operators always, and a dedicated
+            // server's console logs it (`log_admin_commands`).
+            if run.silent {
+                continue;
+            }
             if saved {
-                if self.accepts_success() {
+                if run.to_source {
                     lines.push(reply.clone());
                 }
                 // The guest's source is a player's, not the server's.
-                self.broadcast_to_admins_as(who, true, reply);
+                self.broadcast_to_admins_read(
+                    run.who,
+                    run.to_operators,
+                    run.to_console,
+                    reply.clone(),
+                );
             } else {
                 // sendFailure: the source alone, always (`acceptsFailure`).
-                lines.push(reply);
+                lines.push(reply.clone());
             }
         }
         saved

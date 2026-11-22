@@ -234,3 +234,105 @@ fn a_failed_save_fails_at_the_source_only() {
         Some("commands.save.failed")
     );
 }
+
+/// `SaveAllCommand.saveAll` runs once per source: `/execute as @a run
+/// save-all` in a guest's turn saves once, and every execution that asked for
+/// it keeps its own success line and its own admin line.
+#[test]
+#[ignore = "daily"]
+fn every_source_of_a_guests_save_all_keeps_its_feedback() {
+    let (mut game, _alice, bob) = server_with_two_operators(&world("save-all-two-sources"));
+    let mut ran = None;
+    let console = dedicated::capture_log(|| {
+        ran = Some(
+            game.run_guest_command_told(crate::game::lan_actions::GuestCommand {
+                conn: 1,
+                command: "execute as @a run save-all".into(),
+                permission: 4,
+                integrated: true,
+                quiet: false,
+            })
+            .expect("the operator is connected"),
+        );
+    });
+    let (ok, lines) = ran.unwrap();
+    assert!(ok, "the save went through: {lines:?}");
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|l| l.translation_key() == Some("commands.save.success"))
+            .count(),
+        2,
+        "each source keeps its own copy: {lines:?}"
+    );
+    let bob_lines = chats(&bob);
+    let admins = admin_lines(&bob_lines);
+    assert_eq!(
+        admins.len(),
+        2,
+        "each source's save reaches the other operator: {bob_lines:?}"
+    );
+    assert_eq!(admins[0]["with"][0]["text"], "Alice", "{}", admins[0]);
+    assert_eq!(admins[1]["with"][0]["text"], "Bob", "{}", admins[1]);
+    assert_eq!(
+        console,
+        [
+            "System chat: [Alice: Saved the game]",
+            "System chat: [Bob: Saved the game]"
+        ]
+    );
+}
+
+/// `CommandSourceStack.sendSuccess` and `broadcastToAdmins` read the feedback
+/// rules when the command runs, not when its deferred save finishes: a
+/// `/save-all` that the same turn then turns `send_command_feedback` off still
+/// tells its source and the other operators that the game was saved.
+#[test]
+#[ignore = "daily"]
+fn a_save_all_keeps_the_feedback_rule_of_its_command() {
+    let (mut game, _alice, bob) = server_with_two_operators(&world("save-all-feedback-rule"));
+    // What `/save-all` records while it runs, with the rule on...
+    let deferred = game.deferred_save_all();
+    // ...and the rest of the turn turning it off.
+    assert!(
+        game.ui.rules.set(
+            "send_command_feedback",
+            horizon_client::gamerules::Value::Bool(false)
+        )
+    );
+    assert!(!game.accepts_success(), "the rule is off at the turn's end");
+    let mut lines = Vec::new();
+    assert!(
+        game.finish_deferred_save_all(vec![deferred], &mut lines),
+        "the save went through: {lines:?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.translation_key() == Some("commands.save.success")),
+        "the source still hears the save: {lines:?}"
+    );
+    game.send_admin_feedback(None);
+    let bob_lines = chats(&bob);
+    let [line] = admin_lines(&bob_lines)[..] else {
+        panic!("the other operator still hears the save, once: {bob_lines:?}");
+    };
+    assert_eq!(
+        line["with"][1]["translate"], "commands.save.success",
+        "{line}"
+    );
+    // A `/save-all` that runs with the rule off reports nothing: the decision
+    // is the command's.
+    let deferred = game.deferred_save_all();
+    let mut lines = Vec::new();
+    assert!(game.finish_deferred_save_all(vec![deferred], &mut lines));
+    assert!(
+        lines.is_empty(),
+        "the rule was off when the command ran: {lines:?}"
+    );
+    game.send_admin_feedback(None);
+    assert!(
+        admin_lines(&chats(&bob)).is_empty(),
+        "the rule was off when the command ran"
+    );
+}

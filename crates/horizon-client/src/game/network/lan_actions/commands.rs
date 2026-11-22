@@ -161,7 +161,8 @@ impl Game<'_> {
         self.ui.registries.permission = level;
         let mut lines = self.chat_capture.take().unwrap_or_default();
         self.leave_guest(swap);
-        if let Some(deferred) = std::mem::take(&mut self.save_after_guest_turn) {
+        if !self.save_after_guest_turn.is_empty() {
+            let deferred = std::mem::take(&mut self.save_after_guest_turn);
             ok = self.finish_deferred_save_all(deferred, &mut lines) && ok;
         }
         if let Some(host) = self.lan.as_mut() {
