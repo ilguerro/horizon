@@ -34,6 +34,7 @@ fn bee(types: &crate::mobs::MobTypes) -> Mob {
 /// Difficulty.PEACEFUL` before it poisons a bee: the same bee, at the same
 /// place, only takes the effect above Peaceful.
 #[test]
+#[ignore = "daily"]
 fn a_bee_in_an_open_eyeblossom_is_poisoned_except_on_peaceful() {
     let ran = crate::mobs::world::with_built_test_world(
         &[],
@@ -51,5 +52,5 @@ fn a_bee_in_an_open_eyeblossom_is_poisoned_except_on_peaceful() {
             assert!(!m.has_effect("minecraft:poison"), "untouched on peaceful");
         },
     );
-    let _ = ran;
+    assert!(ran, "vanilla data is missing");
 }
