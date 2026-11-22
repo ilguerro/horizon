@@ -720,7 +720,14 @@ impl Game<'_> {
         } else {
             Vec3::new(first_good[0], first_good[1], first_good[2])
         };
-        let (end_portal, gateway) = self.inside_end_portals(from, at, WIDTH, HEIGHT);
+        let (end_portal, gateway) = horizon_client::end_gateway::end_portals_inside(
+            from,
+            at,
+            WIDTH,
+            HEIGHT,
+            |p| self.block_name([p.x, p.y, p.z]),
+        );
+        let gateway = gateway.map(|p| [p.x, p.y, p.z]);
         if end_portal && !riding {
             // EndPortalBlock.entityInside: the first exit from the End shows the credits.
             let Some(host) = self.lan.as_mut() else {
