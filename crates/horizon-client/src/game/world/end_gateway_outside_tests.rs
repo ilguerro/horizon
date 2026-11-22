@@ -85,6 +85,48 @@ fn a_data_less_gateway_in_the_outer_end_searches_outward() {
     assert_eq!((target.y, target.z), (75.0, 0.0));
 }
 
+/// The return gateway worldgen places on the outer islands carries its exit:
+/// `end_gateway_return` is `EndGatewayFeature.knownExit(ServerLevel.END_SPAWN_POINT, true)`,
+/// so `EndGatewayFeature.place` gives its block entity an `exit_portal` and
+/// `ExactTeleport` (`setExitPosition`), and it still takes a traveller back to
+/// the spawn island now that the far-out `END_SPAWN` shortcut is gone.
+#[test]
+#[ignore = "daily"]
+fn a_worldgen_return_gateway_on_an_outer_island_leads_to_the_spawn_island() {
+    let mut game = server_game();
+    game.dim = Dim::End;
+    let data = horizon_world::worldgen::generator::GeneratorData::load(
+        &game.options.resources.join("worldgen"),
+        game.pack.assets.registry,
+    )
+    .unwrap();
+    let json: serde_json::Value = serde_json::from_str(
+        data.configured_feature_json("minecraft:end_gateway_return")
+            .expect("the placed return gateway is in the pack"),
+    )
+    .unwrap();
+    assert_eq!(json["exact"], serde_json::Value::Bool(true));
+    let exit: [i32; 3] = serde_json::from_value(json["exit"].clone()).unwrap();
+    assert_eq!(exit, [100, 50, 0], "ServerLevel.END_SPAWN_POINT");
+    // EndGatewayFeature.place: setExitPosition(exit, exact) on the new block
+    // entity. The gateway sits on an outer island, far past the old 512 blocks.
+    let gateway = [702, 80, 0];
+    game.world
+        .block_entities
+        .insert((gateway[0], gateway[1], gateway[2]), BlockEntity::EndGateway(EndGateway {
+            exit_portal: Some(exit),
+            exact_teleport: true,
+            ..Default::default()
+        }));
+    let (job, target) = game.gateway_job(gateway);
+    assert_eq!(job, GatewayJob::Known { exit, exact: true });
+    assert_eq!(
+        game.resolve_gateway(job, target).ok(),
+        Some(Some(Vec3::new(100.5, 50.0, 0.5))),
+        "the return gateway lands at the spawn island's exit portal"
+    );
+}
+
 /// `findExitPosition`'s `findTallestBlock` reads the destination level's own
 /// build height (`Level.getMaxY()` down to `Level.getMinY()`): a configured
 /// non-exact exit outside the End lands above a block above y = 255, and above
