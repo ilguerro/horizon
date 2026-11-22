@@ -35,7 +35,8 @@ impl Game<'_> {
             // Into the pearl's level: a new body there, out of its vehicle and
             // with no fall distance or motion (`run_level_teleports`); the
             // rotation is the player's own (`Relative.ROTATION`). The owner
-            // leaves their own level, not the one in place.
+            // leaves their own level, and the 5 damage lands on the player the
+            // teleport returns, once they are in the pearl's level.
             self.level_teleports.push(LevelTeleport {
                 conn,
                 dim: self.dim,
@@ -43,13 +44,14 @@ impl Game<'_> {
                 at: [to.x, to.y, to.z],
                 rotation: None,
                 vehicle: None,
+                hurt: (damage > 0.0).then_some(("minecraft:ender_pearl", damage)),
             });
         } else {
             // ServerPlayer.teleport: removeVehicle before the placement.
             crate::game::creatures::section_steps::teleport_player(self, to);
-        }
-        if damage > 0.0 {
-            self.hurt_player_by("minecraft:ender_pearl", damage);
+            if damage > 0.0 {
+                self.hurt_player_by("minecraft:ender_pearl", damage);
+            }
         }
         self.audio.play(
             "minecraft:entity.player.teleport",

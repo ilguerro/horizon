@@ -104,7 +104,8 @@ fn server_with_a_guest_in_the_nether() -> (Game<'static>, LanHost) {
 /// `ThrownEnderpearl.onHit` teleports its owner with a `TeleportTransition`
 /// into the pearl's own level: a player in the Nether whose pearl lands in the
 /// Overworld comes back to the Overworld, where the pearl was, not to those
-/// coordinates in the Nether. The mods hear the Nether left.
+/// coordinates in the Nether. The 5 damage lands on the player the teleport
+/// returns, once they are there, and the mods hear the Nether left.
 #[test]
 #[ignore = "daily"]
 fn a_pearl_in_the_overworld_takes_its_owner_out_of_the_nether() {
@@ -132,6 +133,13 @@ fn a_pearl_in_the_overworld_takes_its_owner_out_of_the_nether() {
             },
         )
         .unwrap();
+        // The pearl's owner is still whole: `ThrownEnderpearl.onHit` hurts the
+        // player its teleport returned, not the one in the level it left.
+        assert_eq!(
+            game.lan.as_ref().unwrap().hub.guests[0].health,
+            20.0,
+            "no damage before the move"
+        );
         game.run_level_teleports();
         let guest = &game.lan.as_ref().unwrap().hub.guests[0];
         assert_eq!(
@@ -139,6 +147,7 @@ fn a_pearl_in_the_overworld_takes_its_owner_out_of_the_nether() {
             ("minecraft:overworld", [8.5, 64.0, 8.5]),
             "the owner goes to the pearl's level"
         );
+        assert_eq!(guest.health, 15.0, "the 5 damage lands in the pearl's level");
         // The owner left the Nether, so the move ends as a dimension change.
         for _ in 0..20 {
             if !game.on_server_trip(CONN) {

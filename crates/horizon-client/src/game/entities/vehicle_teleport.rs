@@ -574,6 +574,7 @@ impl Game<'_> {
                         at,
                         rotation: Some(rotation),
                         vehicle: restored_objects.by_source.get(&mount).copied(),
+                        hurt: None,
                     });
             }
             game.native_joins_flush(false, 0);

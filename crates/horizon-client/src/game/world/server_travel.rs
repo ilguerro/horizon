@@ -220,6 +220,9 @@ pub(super) struct LevelTeleport {
     pub rotation: Option<[f32; 2]>,
     /// `TeleportTransition.asPassenger`: the vehicle already moved with its tree.
     pub vehicle: Option<u32>,
+    /// `ThrownEnderpearl.onHit` hurts its owner once the teleport has moved
+    /// them: the damage type and amount, applied in the level arrived in.
+    pub hurt: Option<(&'static str, f32)>,
 }
 
 /// A teleport a command made inside a level: told to the mods once it has
@@ -1113,6 +1116,7 @@ impl Game<'_> {
             at,
             rotation: None,
             vehicle: None,
+            hurt: None,
         });
         self.run_level_teleports();
         self.world_spawn_trip(conn, Some(missing));
@@ -1551,6 +1555,11 @@ impl Game<'_> {
                 // The mods hear the teleport into another level, with the
                 // player's state swapped in.
                 g.native_player_teleported(uuid, &name, origin, t.at, t.dim.id());
+                // A pearl hurts its owner after the move, in the level arrived
+                // in (`ThrownEnderpearl.onHit` hurts the returned player).
+                if let Some((damage_type, amount)) = t.hurt {
+                    g.hurt_player_by(damage_type, amount);
+                }
             });
             self.server_trips.retain(|trip| !trip.is(t.conn));
             self.server_trips.push(Trip {
