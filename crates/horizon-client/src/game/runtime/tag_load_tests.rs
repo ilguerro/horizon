@@ -192,6 +192,19 @@ fn tag_remove_completes_from_the_targets_own_tags() {
     let list =
         crate::game::chat::tag_suggestions(remove, at(remove), &["b".to_owned(), "a".to_owned()]);
     assert!(list.iter().all(|s| s.range == (remove.len(), remove.len())));
+    // A completion past the packet's 32767 UTF-16 units is not sent; one at
+    // the limit still is.
+    let longest = format!("{}a", "\u{1f600}".repeat(16383));
+    let too_long = "\u{1f600}".repeat(16384);
+    let list = crate::game::chat::tag_suggestions(
+        remove,
+        at(remove),
+        &[longest.clone(), too_long],
+    );
+    assert_eq!(
+        list.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(),
+        [longest.as_str()]
+    );
     // The typed word filters, and an exact match is not suggested again.
     assert_eq!(
         texts("tag @e[type=minecraft:armor_stand,limit=1] remove a"),

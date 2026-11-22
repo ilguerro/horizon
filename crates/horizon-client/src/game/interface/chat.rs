@@ -45,7 +45,11 @@ pub(in crate::game) fn tag_suggestions(
     tags: &[String],
 ) -> Vec<Suggestion> {
     let mut builder = SuggestionsBuilder::new(command, start);
-    builder.suggest_matching(tags.iter().map(String::as_str));
+    builder.suggest_matching(
+        tags.iter()
+            .map(String::as_str)
+            .filter(|tag| tag.encode_utf16().count() <= 32767),
+    );
     builder.out
 }
 /// The arguments of a typed `/profiler` the client answers itself: only when the chat tree's `profiler` is Horizon's, else the server or mod that owns the name runs it.
@@ -1005,14 +1009,11 @@ impl Game<'_> {
             d.suggests_at(&parse, command.len(), self.ui.registries.permission),
             Some(Suggests::EntityTags)
         ) {
+            let (_, at, context) = parse.context.suggestion_context(command.len());
+            let at = at.min(command.len());
             let tags = self
-                .as_guest(conn, |g| g.tag_suggestion_values(&parse.context))
+                .as_guest(conn, |g| g.tag_suggestion_values(context))
                 .unwrap_or_default();
-            let at = parse
-                .context
-                .suggestion_context(command.len())
-                .1
-                .min(command.len());
             let tags = tag_suggestions(command, at, &tags);
             if !tags.is_empty() {
                 suggestions.extend(tags);
