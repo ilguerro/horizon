@@ -4248,7 +4248,7 @@ impl Game<'_> {
     }
     /// Any entity touching `room` (`Level.getEntities(null, box)`): every kind,
     /// no spectators, none removed (`Entity.setRemoved` leaves the level at once).
-    pub(super) fn entity_in(&self, room: Aabb) -> bool {
+    fn entity_in(&self, room: Aabb) -> bool {
         use super::entity::{Entity as _, with_entity};
         let touches = |b: Aabb| b.intersects(room);
         let extents = |(lo, hi): ([f64; 3], [f64; 3])| {
@@ -4257,6 +4257,10 @@ impl Game<'_> {
                 Vec3::new(hi[0], hi[1], hi[2]),
             )
         };
+        // A remote dragon's copy in the mob list is never moved (`move_entity`
+        // leaves the dragon to its own state), so it would hold a box where it
+        // spawned for ever: the dragon's own boxes are checked above instead.
+        let dragon = self.dragon.as_ref().map(|d| d.id).filter(|id| *id != 0);
         self.fight_players().iter().any(|p| !p.spectator && touches(p.bounds))
             || self.crystals.iter().any(|c| touches(c.bounds()))
             // Level.getEntities also checks each dragon part separately.
@@ -4266,9 +4270,11 @@ impl Game<'_> {
             || self.paintings.iter().any(|p| touches(extents(p.bounds())))
             || self.item_frames.iter().any(|f| touches(extents(f.bounds())))
             || self.cushions.iter().any(|c| touches(extents(c.bounds())))
-            || self
-                .entity_handles()
-                .any(|h| with_entity!(self, h, e => !e.is_removed() && touches(e.bounds())))
+            || self.entity_handles().any(|h| {
+                with_entity!(self, h, e => !e.is_removed()
+                    && Some(e.id()) != dragon
+                    && touches(e.bounds()))
+            })
     }
     /// `EnderDragonFight.tryRespawn`: a crystal on each side of the portal.
     fn try_respawn(&mut self) {

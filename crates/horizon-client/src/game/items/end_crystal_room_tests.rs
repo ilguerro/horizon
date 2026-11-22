@@ -249,3 +249,37 @@ fn the_clicking_client_ends_the_click_where_the_crystal_is_refused() {
         "the client spends the crystal the server places"
     );
 }
+
+/// A dragon over the cell stands in it, as each of its parts does, and once it
+/// has flown away it no longer does: the box is the dragon's own, not a copy
+/// left where it spawned.
+#[test]
+#[ignore = "daily"]
+fn a_dragon_over_the_cell_refuses_the_crystal_and_its_flight_frees_it() {
+    let mut game = client_game("minecraft:obsidian");
+    let over_cell = [
+        f64::from(ABOVE[0]) + 0.5,
+        f64::from(ABOVE[1]),
+        f64::from(ABOVE[2]) + 0.5,
+    ];
+    game.spawn_entity(11, "minecraft:ender_dragon", over_cell, [0.0; 3]);
+    assert!(
+        game.remote_use_block(Hand::Main),
+        "a dragon over the cell ends the click"
+    );
+    assert_eq!(
+        game.held().map(|s| s.count),
+        Some(1),
+        "the dragon's box refuses the crystal"
+    );
+    // The server's next move: one step straight to the far side of the island.
+    game.tick_remote_dragon(Some(([100.0, 100.0, 100.0], None, 1)));
+    assert!(
+        game.remote_use_block(Hand::Main),
+        "the cell is free again"
+    );
+    assert!(
+        game.held().is_none(),
+        "a dragon that flew away does not hold the cell"
+    );
+}
