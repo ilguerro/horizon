@@ -76,7 +76,7 @@ pub struct Service {
     worker: Option<Worker>,
     spawn: Spawn,
     /// Replies the worker finished, waiting for their connection.
-    ready: VecDeque<(u32, Vec<u8>)>,
+    ready: VecDeque<Completed>,
 }
 /// A tile admitted, waiting for the worker.
 pub struct Job {
@@ -88,6 +88,13 @@ pub struct Job {
     pub save: Option<Arc<crate::save::SaveDir>>,
     pub request: Request,
 }
+
+struct Completed {
+    conn: u32,
+    level: String,
+    data: Vec<u8>,
+}
+
 impl Service {
     /// `threads` sample the tiles, 0 for [`auto_threads`] of this machine.
     pub fn new(distance: u32, threads: u32, biome_names: Vec<String>) -> Self {
@@ -169,7 +176,11 @@ impl Service {
             self.worker = Worker::start(self.biome_names.clone(), self.threads, self.spawn);
         }
         let Some(worker) = &self.worker else {
-            self.ready.push_back((job.conn, refusal(job.request.id)));
+            self.ready.push_back(Completed {
+                conn: job.conn,
+                level: job.level,
+                data: refusal(job.request.id),
+            });
             return;
         };
         let mut queue = lock(&worker.shared.queue);
@@ -191,21 +202,28 @@ impl Service {
     /// keep their place among the game's packets. A reply its connection
     /// is too busy for waits; one taken frees its player's slot.
     pub fn deliver(&mut self, mut send: impl FnMut(u32, &mut Vec<u8>) -> Delivery) {
+        self.deliver_in_level(|conn, _, data| send(conn, data));
+    }
+
+    /// Also supplies the level sampled by the worker, so the game can recheck the
+    /// player's current dimension and terrain view before sending the reply.
+    pub fn deliver_in_level(&mut self, mut send: impl FnMut(u32, &str, &mut Vec<u8>) -> Delivery) {
         if let Some(worker) = &self.worker {
             self.ready.extend(lock(&worker.shared.done).drain(..));
         }
         let players = &mut self.players;
-        self.ready
-            .retain_mut(|(conn, data)| match send(*conn, data) {
+        self.ready.retain_mut(
+            |reply| match send(reply.conn, &reply.level, &mut reply.data) {
                 Delivery::Sent => {
-                    if let Some(p) = players.get_mut(conn) {
+                    if let Some(p) = players.get_mut(&reply.conn) {
                         p.in_flight = p.in_flight.saturating_sub(1);
                     }
                     false
                 }
                 Delivery::Busy => true,
                 Delivery::Gone => false,
-            });
+            },
+        );
     }
 }
 
@@ -221,7 +239,7 @@ struct WorkerShared {
     queue: Mutex<Queue>,
     wake: Condvar,
     /// Replies sampled, for [`Service::deliver`].
-    done: Mutex<Vec<(u32, Vec<u8>)>>,
+    done: Mutex<Vec<Completed>>,
     tiles: Mutex<Tiles>,
     biome_names: Arc<Vec<String>>,
 }
@@ -321,7 +339,11 @@ impl WorkerShared {
                 }
                 if let Some(reply) = tiles.kept.get(&job.level, &job.source, &r) {
                     drop(tiles);
-                    lock(&self.done).push((job.conn, reply));
+                    lock(&self.done).push(Completed {
+                        conn: job.conn,
+                        level: job.level,
+                        data: reply,
+                    });
                     continue;
                 }
                 match tiles.sampling.entry(key.clone()) {
@@ -356,9 +378,10 @@ impl WorkerShared {
                 let (_, sampler) = samplers.get_mut(&job.level).expect("inserted above");
                 sampler.set_approximate(r.approximate);
                 let columns = sampler.grid(r.x, r.z, r.stride, SIDE);
-                // Not kept when part of it is still on its way.
-                sampled = !sampler.waited();
-                encode_tile(Some(&columns), &self.biome_names)
+                let tile = encode_tile(Some(&columns), &self.biome_names);
+                // Kept only once encoded: an unwind leaves `sampled` false.
+                sampled = true;
+                tile
             }));
             let tile = tile.unwrap_or_else(|_| {
                 log::warn!("Far terrain: sampling {} failed; tile refused", job.level);
@@ -381,9 +404,17 @@ impl WorkerShared {
             };
             let mut done = lock(&self.done);
             for (conn, id) in waiting {
-                done.push((conn, reply(id, &tile)));
+                done.push(Completed {
+                    conn,
+                    level: job.level.clone(),
+                    data: reply(id, &tile),
+                });
             }
-            done.push((job.conn, reply(r.id, &tile)));
+            done.push(Completed {
+                conn: job.conn,
+                level: job.level,
+                data: reply(r.id, &tile),
+            });
         }
     }
     /// The next player's next tile (for a `helper`, once a tile waited
@@ -495,8 +526,13 @@ mod tests {
             service.request(1, &request(0, 0), at, true, later),
             Verdict::Refuse(_)
         ));
-        service.ready.push_back((1, Vec::new()));
-        service.ready.push_back((2, Vec::new()));
+        for conn in [1, 2] {
+            service.ready.push_back(Completed {
+                conn,
+                level: "minecraft:overworld".into(),
+                data: Vec::new(),
+            });
+        }
         service.deliver(|conn, _| {
             if conn == 1 {
                 Delivery::Sent
@@ -549,12 +585,12 @@ mod tests {
     }
 
     /// Every reply in `service` for `count` requests.
-    fn replies(service: &mut Service, count: usize) -> Vec<(u32, Vec<u8>)> {
+    fn replies(service: &mut Service, count: usize) -> Vec<(u32, String, Vec<u8>)> {
         let mut replies = Vec::new();
         let start = Instant::now();
         while replies.len() < count && start.elapsed() < Duration::from_secs(10) {
-            service.deliver(|conn, data| {
-                replies.push((conn, std::mem::take(data)));
+            service.deliver_in_level(|conn, level, data| {
+                replies.push((conn, level.to_owned(), std::mem::take(data)));
                 Delivery::Sent
             });
             thread::sleep(Duration::from_millis(2));
@@ -595,7 +631,8 @@ mod tests {
         // Each the bytes a fresh sample makes for its id.
         let mut fresh = Counted(Arc::default());
         let fresh = fresh.grid(-16, 0, 1, SIDE);
-        for (_, reply) in &got {
+        for (_, level, reply) in &got {
+            assert_eq!(level, "minecraft:overworld");
             let id = super::super::reply_id(reply).unwrap();
             assert_eq!(*reply, encode_reply(id, Some(&fresh), &names));
         }
@@ -617,7 +654,13 @@ mod tests {
                 request,
             });
         }
-        assert_eq!(replies(&mut service, 2).len(), 2);
+        assert_eq!(
+            replies(&mut service, 2)
+                .into_iter()
+                .map(|(_, level, _)| level)
+                .collect::<Vec<_>>(),
+            ["minecraft:the_nether", "minecraft:overworld"]
+        );
         assert_eq!(
             columns.load(std::sync::atomic::Ordering::Relaxed),
             3 * SIDE * SIDE
@@ -680,7 +723,7 @@ mod tests {
             3 * SIDE * SIDE
         );
         let fresh = Slow(Arc::default()).grid(0, 0, 1, SIDE);
-        for (conn, reply) in &got {
+        for (conn, _, reply) in &got {
             let id = super::super::reply_id(reply).unwrap();
             if id <= 4 {
                 assert_eq!(id, *conn);
@@ -794,12 +837,15 @@ mod tests {
             replies(service, 1)
         };
         service.spawn = |_, _| Err(std::io::Error::other("no threads left"));
-        assert_eq!(push(&mut service, 1), [(1, refusal(1))]);
+        assert_eq!(
+            push(&mut service, 1),
+            [(1, "minecraft:overworld".to_owned(), refusal(1))]
+        );
         assert_eq!(service.players[&1].in_flight, 0);
         service.spawn = spawn;
         let got = push(&mut service, 2);
         assert_eq!(got.len(), 1);
-        assert_ne!(got[0].1, refusal(2));
+        assert_ne!(got[0].2, refusal(2));
     }
 
     #[test]
