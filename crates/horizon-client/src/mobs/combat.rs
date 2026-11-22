@@ -19,7 +19,12 @@ pub struct Entry {
 #[derive(Clone, Debug, Default)]
 pub struct Tracker {
     pub entries: Vec<Entry>,
-    last_damage_time: Option<u32>,
+    last_damage_time: u32,
+    /// Health-taking hits recorded so far. Each `CombatTracker.recordDamage`
+    /// call sits inside `actuallyHurt`'s `if (dmg != 0.0F)` and raises one
+    /// `GameEvent.ENTITY_DAMAGE`, so this count is the number of vibrations
+    /// the hit has due.
+    damage_count: u64,
     pub in_combat: bool,
     taking_damage: bool,
 }
@@ -32,17 +37,17 @@ impl Tracker {
         self.recheck(true, tick);
         let living_cause = entry.source.attacker.is_some();
         self.entries.push(entry);
-        self.last_damage_time = Some(tick);
+        self.last_damage_time = tick;
+        self.damage_count += 1;
         self.taking_damage = true;
         if !self.in_combat && living_cause {
             self.in_combat = true;
         }
     }
-    /// The tick of the last hit that took something, the one whose
-    /// `actuallyHurt` recorded it and raised `GameEvent.ENTITY_DAMAGE` (both
-    /// sit inside vanilla's `if (dmg != 0.0F)`); `None` until a hit lands.
-    pub fn last_damage_tick(&self) -> Option<u32> {
-        self.last_damage_time
+    /// How many health-taking hits this tracker has recorded, monotonically:
+    /// the sculk scan posts one vibration per count it has not posted yet.
+    pub fn damage_count(&self) -> u64 {
+        self.damage_count
     }
     /// `CombatTracker.recheckStatus`: 100 ticks without a hit (300 in a
     /// fight) forget them all. Vanilla also forgets them once the mob is
@@ -50,12 +55,7 @@ impl Tracker {
     /// so a dead mob's hits stay for it.
     pub fn recheck(&mut self, alive: bool, tick: u32) {
         let reset = if self.in_combat { 300 } else { 100 };
-        if alive
-            && self.taking_damage
-            && self
-                .last_damage_time
-                .is_some_and(|last| tick.wrapping_sub(last) > reset)
-        {
+        if alive && self.taking_damage && tick.wrapping_sub(self.last_damage_time) > reset {
             self.taking_damage = false;
             self.in_combat = false;
             self.entries.clear();

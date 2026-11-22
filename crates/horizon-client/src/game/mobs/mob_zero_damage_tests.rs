@@ -16,10 +16,10 @@ fn with_game<R>(f: impl FnOnce(&mut Game<'_>) -> R) -> Option<R> {
     Some(f(&mut g))
 }
 
-/// What one zombie blow of `attack_damage` left: the pig's health, the sounds the level played
-/// and the game events posted (`dispense_fixture`'s `G x,y,z event` lines, the end-of-tick scan
-/// included).
-fn hit_with(g: &mut Game<'_>, attack_damage: f32) -> (f32, Vec<String>, Vec<String>) {
+/// What the zombie blows of `attack_damages` left, all before the mob's age advances: the pig's
+/// health, the sounds the level played and the game events posted (`dispense_fixture`'s
+/// `G x,y,z event` lines, the end-of-tick scan included).
+fn hits_with(g: &mut Game<'_>, attack_damages: &[f32]) -> (f32, Vec<String>, Vec<String>) {
     g.mobs.clear();
     g.audio.capture = Some(Vec::new());
     for (id, kind) in [(41, "minecraft:zombie"), (42, "minecraft:pig")] {
@@ -28,8 +28,6 @@ fn hit_with(g: &mut Game<'_>, attack_damage: f32) -> (f32, Vec<String>, Vec<Stri
         m.health = 20.0;
         g.mobs.push(m);
     }
-    // `/attribute … minecraft:attack_damage base set 0`: the blow carries no damage.
-    g.mobs[0].attrs.attack_damage = attack_damage;
     let mut mobs = g.mobs.lift();
     let mut fixture = crate::health::TestLevel::new(0);
     let mut events = Vec::new();
@@ -40,7 +38,11 @@ fn hit_with(g: &mut Game<'_>, attack_damage: f32) -> (f32, Vec<String>, Vec<Stri
             level: &mut fixture.level(),
             events: &mut events,
         };
-        do_hurt_target(&mut mobs[0], Who::Mob(42), &mut cx);
+        for &attack_damage in attack_damages {
+            // `/attribute … minecraft:attack_damage base set …`: the blow's damage.
+            mobs[0].attrs.attack_damage = attack_damage;
+            do_hurt_target(&mut mobs[0], Who::Mob(42), &mut cx);
+        }
     }
     g.mobs
         .restore(mobs, horizon_client::join_seq::RestoreOrder::SpawnsFirst);
@@ -68,8 +70,8 @@ fn hit_with(g: &mut Game<'_>, attack_damage: f32) -> (f32, Vec<String>, Vec<Stri
 #[ignore = "daily"]
 fn a_blow_with_no_attack_damage_takes_nothing_and_posts_no_damage_event() {
     let Some(outcome) = with_game(|g| {
-        let nothing = hit_with(g, 0.0);
-        let one = hit_with(g, 1.0);
+        let nothing = hits_with(g, &[0.0]);
+        let one = hits_with(g, &[1.0]);
         (nothing, one)
     }) else {
         return;
@@ -93,5 +95,24 @@ fn a_blow_with_no_attack_damage_takes_nothing_and_posts_no_damage_event() {
             .iter()
             .any(|l| l.ends_with("minecraft:entity_damage")),
         "a blow that takes something posts its damage vibration: {posted:?}"
+    );
+}
+
+/// Two blows that take health before the mob's age advances each post their own
+/// `ENTITY_DAMAGE`: vanilla posts it per `actuallyHurt`, not once per combat tick.
+#[test]
+#[ignore = "daily"]
+fn two_hits_in_one_tick_each_post_a_damage_vibration() {
+    let Some((health, _, posted)) = with_game(|g| hits_with(g, &[1.0, 2.0])) else {
+        return;
+    };
+    assert_eq!(health, 18.0, "both blows take health");
+    assert_eq!(
+        posted
+            .iter()
+            .filter(|l| l.ends_with("minecraft:entity_damage"))
+            .count(),
+        2,
+        "each blow posts its own damage vibration: {posted:?}"
     );
 }
