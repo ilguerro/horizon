@@ -10,6 +10,14 @@ horizon_client::game::native_replay::DEVICE_NAMES  #19310
 horizon_client::game::native_replay::MAX_RECORDING_ID  #19310
 horizon_client::game::native_replay::reparse_point  #19310
 horizon_client::game::native_replay::valid_id  #19310
+# The old per-player square cache of the spawning pass: the counter it fed is gone (#16223).
+horizon_client::game::natural_spawning::SpawnScratch::chunks  #16223
+horizon_client::game::natural_spawning::SpawnScratch::holds  #16223
+horizon_client::game::natural_spawning::SpawnScratch::neighbours  #16223
+horizon_client::game::natural_spawning::SpawnScratch::overlap  #16223
+horizon_client::game::natural_spawning::SpawnScratch::prepare  #16223
+horizon_client::game::natural_spawning::SpawnScratch::segments  #16223
+horizon_client::game::natural_spawning::SpawnScratch::stale  #16223
 horizon_mod_package::manifest::inject::Inject  #19576
 horizon_mod_package::manifest::inject::Kind  #19576
 horizon_client::game::Game<'_>::lod_blue_map  kind=field  #19554
