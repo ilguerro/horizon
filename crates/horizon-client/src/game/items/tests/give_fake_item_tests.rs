@@ -3,6 +3,7 @@
 use super::super::native_machines::tests::server_game;
 use super::*;
 use horizon_core::geometry::Vec3;
+use horizon_core::random::RandomSource;
 
 fn diamonds(game: &Game<'_>) -> u32 {
     game.inventory
@@ -47,4 +48,45 @@ fn give_that_fits_spawns_a_fake_item_that_is_never_picked_up() {
     game.dropped[0].age = 5999;
     game.tick_items();
     assert!(game.dropped.is_empty(), "gone on its next tick");
+}
+
+/// `GiveCommand.giveItem`: `createItemStackToDrop(stack, false, false)` makes
+/// the flash's four draws from the player's own random and then the pickup
+/// sound's pitch two more, one stream, so the next throw from this player
+/// continues it instead of repeating the level's.
+#[test]
+#[ignore = "daily"]
+fn give_that_fits_draws_from_the_players_random() {
+    let mut game = server_game();
+    game.build_registries();
+    game.player = Some(PlayerMotion::new(game.motion, Vec3::new(8.5, 100.0, 8.5)).unwrap());
+    game.set_allow_commands(true);
+    let mut random = game.player.as_ref().unwrap().random.clone();
+    let velocity = horizon_client::entities::drop_motion(&mut random, game.yaw, game.pitch, false);
+    let pitch = ((random.next_float() - random.next_float()) * 0.7 + 1.0) * 2.0;
+    game.audio.capture = Some(Vec::new());
+    assert!(game.run_command("give @s minecraft:diamond 1"));
+    let flash = &game.dropped[0];
+    assert_eq!(
+        flash.velocity,
+        Vec3::new(velocity[0], velocity[1], velocity[2]),
+        "the flash scatters by the player's own random"
+    );
+    let played: Vec<(&str, f32)> = game
+        .audio
+        .capture
+        .iter()
+        .flatten()
+        .map(|s| (s.event.as_str(), s.pitch))
+        .collect();
+    assert_eq!(
+        played,
+        [("minecraft:entity.item.pickup", pitch)],
+        "and the pickup sound's pitch is the next two draws of that stream"
+    );
+    assert_eq!(
+        game.player.as_ref().unwrap().random.state(),
+        random.state(),
+        "six draws of the player's random, not a fresh stream"
+    );
 }
