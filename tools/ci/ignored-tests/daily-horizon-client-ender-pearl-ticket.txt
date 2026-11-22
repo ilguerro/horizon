@@ -1,3 +1,4 @@
 # A thrown ender pearl's ticket needs the prepared resources: its chunk and level tick in a headless server fixture.
 # PACKAGE TEST TARGET daily REASON; exact logical libtest identities, sorted.
 horizon-client game::ender_pearl_ticket_tests::a_pearl_keeps_its_chunk_and_level_ticking_with_nobody_in_it lib daily resources
+horizon-client game::ender_pearl_ticket_tests::a_pearl_that_lands_on_its_first_tick_holds_no_ticket lib daily resources

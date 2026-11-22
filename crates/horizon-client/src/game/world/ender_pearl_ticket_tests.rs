@@ -70,3 +70,43 @@ fn a_pearl_keeps_its_chunk_and_level_ticking_with_nobody_in_it() {
     assert_eq!(game.levels_to_tick(), vec![Dim::Overworld]);
 }
 
+/// `ThrownEnderpearl.tick`: a pearl that lands on its first entity tick is
+/// discarded by `super.tick()` before the ticket refresh runs, so it places
+/// no ticket in the chunk it landed in. The ticket is only registered after
+/// the tick, and only `if (this.isAlive())`.
+#[test]
+#[ignore = "daily"]
+fn a_pearl_that_lands_on_its_first_tick_holds_no_ticket() {
+    let mut game = server_game();
+    let stone = game
+        .pack
+        .assets
+        .registry
+        .default_state("minecraft:stone")
+        .unwrap();
+    game.world.set(1, 64, 0, stone).unwrap();
+    let mut pearl = Projectile::new(
+        ProjectileKind::EnderPearl,
+        Vec3::new(0.5, 64.5, 0.5),
+        Some(Who::Player),
+    );
+    pearl.velocity = Vec3::new(2.0, 0.0, 0.0);
+    game.creatures.projectiles.push(pearl);
+    // The live pearl's own ticket makes its chunk entity tick this tick.
+    game.update_chunk_tickets();
+    assert!(game.tickets.levels().entity_ticking(0, 0));
+    game.tick_projectiles().unwrap();
+    assert!(
+        game.creatures.projectiles.is_empty(),
+        "the pearl landed and was discarded"
+    );
+    game.update_chunk_tickets();
+    assert!(
+        game.tickets.pearl_tickets().is_empty(),
+        "the landing tick placed no ticket"
+    );
+    assert!(
+        !game.tickets.levels().block_ticking(0, 0),
+        "and the chunk it landed in keeps none"
+    );
+}
