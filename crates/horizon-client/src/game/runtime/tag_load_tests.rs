@@ -89,7 +89,7 @@ fn saved_tags(game: &mut Game<'_>, t: Target) -> Vec<String> {
 /// all three views of the entity (`/tag list` reads `tags_of`; `/data get` and
 /// the save read the compound).
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_repeated_tag_loads_once_for_every_compound_horizon_keeps() {
     let mut game = game();
     // The item frame's extra data keeps the frame's item, which is not the
@@ -138,7 +138,7 @@ fn a_repeated_tag_loads_once_for_every_compound_horizon_keeps() {
 /// attaches its provider to that node only, and the server resolves the
 /// parsed `targets` (`getTags`) when the client asks (`ask_server`).
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn tag_remove_completes_from_the_targets_own_tags() {
     let mut game = game();
     assert!(game.run_command(
@@ -207,7 +207,7 @@ fn tag_remove_completes_from_the_targets_own_tags() {
 /// `/data merge` loads the compound into the entity (`Entity.load`), so the
 /// `Tags` it carries are a set too.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn data_merge_writes_the_tag_set_of_an_armour_stand() {
     let mut game = game();
     assert!(game.run_command("summon armor_stand 4.5 100 4.5 {UUID:[I;254,0,0,1]}"));
