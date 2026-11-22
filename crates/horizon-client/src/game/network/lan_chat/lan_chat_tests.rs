@@ -120,7 +120,7 @@ fn shown(rx: &mpsc::Receiver<Out>) -> Vec<String> {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_message_command_resolves_selectors_only_for_a_source_that_may_use_them() {
     let (mut game, alice, bob) = server();
     // An operator's `/say`, `/me` and `/msg`: `@p` is the sender himself.
