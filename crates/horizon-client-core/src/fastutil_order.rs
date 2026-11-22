@@ -40,7 +40,7 @@ impl OpenKey for i64 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpenOrder<K = String> {
     keys: Vec<Option<K>>,
-    /// The null key (`containsNullKey`): first in `iter`, last in `stream`.
+    /// The null key (`containsNullKey`): first in `iter` and in `stream`.
     null: Option<K>,
     size: usize,
     min_n: usize,
@@ -205,9 +205,11 @@ impl<K: OpenKey + Clone> OpenOrder<K> {
     pub fn iter(&self) -> impl Iterator<Item = &K> {
         self.null.iter().chain(self.keys.iter().rev().flatten())
     }
-    /// `spliterator()` (what `stream()` uses): from the first slot up.
+    /// `spliterator()` (what `stream()` uses): the null key first, then from
+    /// the first slot up, as fastutil's does (checked against its bundled
+    /// `Long2ByteOpenHashMap`).
     pub fn stream(&self) -> impl Iterator<Item = &K> {
-        self.keys.iter().flatten().chain(&self.null)
+        self.null.iter().chain(self.keys.iter().flatten())
     }
 }
 
@@ -310,6 +312,22 @@ mod tests {
             o.remove(&format!("k{i}"));
         }
         assert_eq!(o.iter().collect::<Vec<_>>(), vec!["harness_h"]);
+    }
+
+    /// fastutil's spliterator visits the null key (0) before the table, as its
+    /// iterator does; the table slots go up rather than down.
+    #[test]
+    fn stream_puts_the_null_key_first() {
+        let mut o = OpenOrder::<i64>::new(16, 0.75);
+        for k in [1, 0, 2] {
+            o.insert(&k);
+        }
+        let mut stream: Vec<i64> = o.stream().copied().collect();
+        assert_eq!(stream.first(), Some(&0));
+        let iter: Vec<i64> = o.iter().copied().collect();
+        assert_eq!(iter.first(), Some(&0));
+        stream[1..].reverse();
+        assert_eq!(stream, iter);
     }
 
     #[test]
