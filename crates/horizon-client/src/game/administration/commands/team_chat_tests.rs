@@ -97,7 +97,7 @@ fn second_guest(game: &mut Game<'_>) -> mpsc::Receiver<horizon_client::lan::Out>
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_team_message_from_a_guest_reaches_the_guest_and_the_team() {
     let mut resources = None;
     let (mut game, rx) = game(&mut resources);
@@ -144,7 +144,7 @@ fn a_team_message_from_a_guest_reaches_the_guest_and_the_team() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_team_message_reaches_every_member_and_the_sender() {
     let mut resources = None;
     let (mut game, rx) = game(&mut resources);
@@ -172,7 +172,7 @@ fn a_team_message_reaches_every_member_and_the_sender() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_whisper_names_its_target_on_the_sender_and_reaches_the_target() {
     let mut resources = None;
     let (mut game, rx) = game(&mut resources);
@@ -190,7 +190,7 @@ fn a_whisper_names_its_target_on_the_sender_and_reaches_the_target() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn an_emote_from_a_source_that_is_not_a_player_is_broadcast() {
     let mut resources = None;
     let (mut game, rx) = game(&mut resources);
