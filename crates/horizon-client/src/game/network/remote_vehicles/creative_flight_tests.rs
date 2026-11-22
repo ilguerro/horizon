@@ -393,3 +393,115 @@ fn a_pending_auto_jump_from_walking_does_not_block_the_riders_toggle() {
         "a value left by the last walking tick does not block the rider's toggle"
     );
 }
+
+/// What the client sent since the last call, as play packets.
+fn sent_packets(reader: &mut horizon_protocol::connection::ConnReader) -> Vec<S> {
+    reader
+        .set_read_timeout(Some(std::time::Duration::from_millis(200)))
+        .unwrap();
+    let mut packets = Vec::new();
+    while let Ok((id, body)) = reader.recv() {
+        packets.extend(S::decode(id, &body).ok());
+    }
+    packets
+}
+
+#[test]
+#[ignore = "daily"]
+fn a_rider_flight_toggle_sends_one_ability_packet_from_the_client_tick() {
+    use crate::game::native_entity_refs::tests::with_client_game;
+    use crate::game::remote::tests::connect_menu_test;
+    use horizon_client::{chunk::Chunk, held::Source};
+    use horizon_protocol::connection::ConnReader;
+    use winit::keyboard::KeyCode;
+
+    with_client_game(|game| {
+        let (mut reader, _writer) = connect_menu_test(game);
+        game.handle_packet(C::Login(play::Login {
+            player_id: 7,
+            hardcore: false,
+            levels: vec!["minecraft:overworld".into()],
+            max_players: 20,
+            chunk_radius: 8,
+            simulation_distance: 8,
+            reduced_debug_info: false,
+            show_death_screen: true,
+            limited_crafting: false,
+            spawn: play::SpawnInfo {
+                dimension_type: 0,
+                dimension: "minecraft:overworld".into(),
+                seed: 1,
+                game_type: 0,
+                previous_game_type: None,
+                debug: false,
+                flat: false,
+                last_death: None,
+                portal_cooldown: 0,
+                sea_level: 63,
+            },
+            online_mode: false,
+            enforces_secure_chat: false,
+        }))
+        .unwrap();
+        game.handle_packet(C::PlayerPosition(play::PlayerPosition {
+            teleport: 1,
+            position: [0.5, 64.0, 0.5],
+            delta: [0.0; 3],
+            yaw: 0.0,
+            pitch: 0.0,
+            relatives: 0,
+        }))
+        .unwrap();
+        sent_packets(&mut reader);
+        for x in -1..=1 {
+            for z in -1..=1 {
+                game.streaming
+                    .insert_remote(&mut game.world, Chunk::empty(x, z));
+            }
+        }
+        let remote = game.remote.as_mut().unwrap();
+        remote.joined = true;
+        remote.level_load.finish();
+        let mut player = PlayerMotion::new(game.motion, Vec3::new(0.5, 64.0, 0.5)).unwrap();
+        player.may_fly = true;
+        player.flying = false;
+        game.player = Some(player);
+        game.screen = Screen::Playing;
+        let kind = game.res.mob_types().get("minecraft:horse").unwrap().clone();
+        let mut horse = Mob::new(7, kind, Vec3::new(0.5, 64.0, 0.5), 0.0);
+        horse.set_saddle(Some(ItemStack::new("minecraft:saddle", 1)));
+        game.mobs.clear();
+        game.mobs.push(horse);
+        game.riding = Some(7);
+        game.remote.as_mut().unwrap().first_passenger = true;
+        game.keys.clear();
+
+        let tick = |game: &mut Game<'_>, reader: &mut ConnReader, jump: bool| -> Vec<i8> {
+            if jump {
+                game.keys.press(KeyCode::Space, Source::Keyboard);
+            } else {
+                game.keys.release(&KeyCode::Space, Source::Keyboard);
+            }
+            game.tick_remote().unwrap();
+            sent_packets(reader)
+                .into_iter()
+                .filter_map(|packet| match packet {
+                    S::PlayerAbilities(abilities) => Some(abilities.flags),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert!(
+            tick(game, &mut reader, true).is_empty(),
+            "the first press only opens the double-tap window"
+        );
+        assert!(tick(game, &mut reader, false).is_empty());
+        assert_eq!(
+            tick(game, &mut reader, true),
+            [2],
+            "the second press toggles flight and the tick tells the server"
+        );
+        assert!(game.player.as_ref().unwrap().flying);
+    });
+}
+
