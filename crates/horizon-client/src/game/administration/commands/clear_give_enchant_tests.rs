@@ -328,6 +328,9 @@ fn clear_broadcasts_the_mods_craft_result() {
     }
     let mods: mod_api::Mods =
         vec![mod_api::ModEntry::new("clear_prepare", Box::new(Prepare))].into();
+    // A fresh parts epoch, so the item keys resolve even when another test
+    // on this thread already completed its own.
+    crate::game::api_values::register_game_keys(std::iter::empty::<String>());
     crate::game::api_values::resolve_item_registry(game.items()).unwrap();
     mod_platform::testing::with_mods(mods, || {
         assert!(game.run_guest_command(GuestCommand {
