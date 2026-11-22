@@ -215,7 +215,7 @@ are loaded. The entity tick Pre's cancellations are heard before the loop and pa
 A lingering potion cloud doses its mobs at its own place in the join order (#12183): a cloud
 that joined before some of the loop's mobs doses before the turn of the first of them, every mob
 in its box, whatever their island. A tick with such a dose runs serially. A cloud that joined after
-every mob doses after the loop, so its tick stays grouped.
+every mob doses after the loop, so its dose does not keep the tick serial (another rule still can).
 
 The tick profiler samples on whichever thread runs a mob: each helper samples for whoever
 samples on the server thread, into its own sums, which join the server thread's when it ends.

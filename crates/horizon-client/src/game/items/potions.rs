@@ -6,12 +6,16 @@
 mod cloud_particle;
 use super::{
     Game, Screen,
-    dragon::{Breath, FightWho},
+    combat::PlayerCredit,
+    dragon::{Breath, FightPlayer, FightWho},
     item_draw::owner_at,
+    remote_projectiles::cloud_client_tick,
     splash_water::thrown_block_hit,
 };
 use horizon_assets::item_model::DisplayContext;
 use horizon_client::health::DamageLevel;
+use horizon_client::join_seq::{JoinSeq, RestoreOrder};
+use horizon_client::lan::playerdata::ints_uuid;
 use horizon_client::{
     block_entity_render::vertex_light,
     brewing,
@@ -31,6 +35,8 @@ use horizon_core::{
     random::{EntityRandom, LegacyRandom, RandomSource},
 };
 use mod_api::{EffectApplicable, EffectTickChange, EntityRef, LivingRef, PlayerFood};
+
+use self::cloud_tick::{admit, used};
 
 /// Per-cloud settings; natural lingering clouds keep their creation defaults.
 pub(super) struct CloudSettings {
@@ -1880,6 +1886,157 @@ impl Game<'_> {
         self.breath_clouds.push(cloud);
         Some(id)
     }
+    /// `AreaEffectCloud.tick` for the lingering potions' clouds: the client
+    /// tick's particles, then the server tick.
+    pub(in crate::game) fn tick_potion_clouds(&mut self) {
+        // What a tick that stopped before its mobs left is not dosed late.
+        self.potions.cloud_doses.due.clear();
+        if self.breath_clouds.iter().all(|c| c.potion.is_none()) {
+            return;
+        }
+        let players: Vec<FightPlayer> = self
+            .fight_players()
+            .into_iter()
+            .filter(|p| p.alive)
+            .collect();
+        let first_mob = self.mobs.iter().map(|m| m.join).min();
+        let mut clouds = self.breath_clouds.lift();
+        #[cfg(test)]
+        crate::game::entity::taken_pass_tests::after_take(self);
+        // ServerLevel.tick: only entities in entity-ticking chunks tick.
+        let ticking = self.entity_ticking_area();
+        let mut expired: Vec<u32> = Vec::new();
+        clouds.retain_mut(|c| {
+            let keep = c.potion.is_none()
+                || !ticking(c.at[0].floor() as i32, c.at[2].floor() as i32)
+                || self.tick_potion_cloud(c, &players, first_mob);
+            if !keep {
+                expired.push(c.id);
+            }
+            keep
+        });
+        self.breath_clouds.restore(clouds, RestoreOrder::SpawnsFirst);
+        // A cloud that expired on its own takes its `noPhysics` write with it.
+        for id in expired {
+            self.forget_entity(id);
+        }
+    }
+    /// `AreaEffectCloud.serverTick`: configured lifetime/radius changes and
+    /// five-tick doses, with each victim's configured reapplication delay.
+    /// The mobs' doses of a cloud a mob joined before (`first_mob`) wait for
+    /// its place in the mob loop ([`CloudDoses`]). False once the cloud is gone.
+    fn tick_potion_cloud(
+        &mut self,
+        c: &mut Breath,
+        players: &[FightPlayer],
+        first_mob: Option<JoinSeq>,
+    ) -> bool {
+        // `Entity.baseTick`: an `AreaEffectCloud` is fire-immune, so a positive
+        // loaded `Fire` is cleared on its first tick (a load keeps it as given).
+        if let Some(raw) = self.persist.raw.get_mut(&c.id) {
+            horizon_client::entity_nbt::clear_positive_fire(raw);
+        }
+        // `Entity.baseTick` -> `updateFluidInteraction`: a cloud whose box (`radius * 2`
+        // wide, 0.5 high) is in water resets the fall distance it was loaded with.
+        if c.potion.is_some() {
+            let r = f64::from(c.radius);
+            let bounds = Aabb::new(
+                Vec3::new(c.at[0] - r, c.at[1], c.at[2] - r),
+                Vec3::new(c.at[0] + r, c.at[1] + 0.5, c.at[2] + r),
+            );
+            if self.bounds_in_water(bounds)
+                && let Some(horizon_core::nbt::Tag::Compound(raw)) =
+                    self.persist.raw.get_mut(&c.id)
+                && raw.contains_key(&"fall_distance".into())
+            {
+                raw.insert("fall_distance".into(), horizon_core::nbt::Tag::Double(0.0_f64.to_bits()));
+            }
+        }
+        c.age = c.age.wrapping_add(1);
+        let Some(potion) = c.potion.as_mut() else {
+            return true;
+        };
+        if c.duration != -1 && c.age.wrapping_sub(potion.settings.wait_time) >= c.duration {
+            return false;
+        }
+        let waiting = c.age < potion.settings.wait_time;
+        cloud_client_tick(
+            &mut self.particles,
+            c.at,
+            c.radius,
+            waiting,
+            &potion.particle(),
+        );
+        if waiting {
+            return true;
+        }
+        if potion.radius_per_tick != 0.0 {
+            c.radius += potion.radius_per_tick;
+            if c.radius < 0.5 {
+                return false;
+            }
+            c.radius = c.radius.clamp(0.0, 32.0);
+        }
+        if c.age % 5 != 0 {
+            return true;
+        }
+        potion.victims.retain(|(_, until)| c.age < *until);
+        if potion.effects.is_empty() {
+            potion.victims.clear();
+            return true;
+        }
+        let r = f64::from(c.radius);
+        let area = Aabb::new(
+            Vec3::new(c.at[0] - r, c.at[1], c.at[2] - r),
+            Vec3::new(c.at[0] + r, c.at[1] + 0.5, c.at[2] + r),
+        );
+        let mut inside = Vec::new();
+        for p in players.iter().filter(|p| p.bounds.intersects(area)) {
+            inside.push((Victim::Player(p.who), p.position.x, p.position.z));
+        }
+        if first_mob.is_some_and(|first| first < c.join) && !self.cloud_dose_needs_mods(&potion.effects)
+        {
+            // A mob joined before this cloud: its mob doses wait for their place in the
+            // mob loop. The players' are given here, as `ServerPlayer.doTick` runs
+            // before the level's entities.
+            self.potions.cloud_doses.due.push((c.join, area));
+        } else {
+            for (mob, x, z) in self.cloud_mob_candidates(&potion.effects, area) {
+                inside.push((Victim::Mob(mob), x, z));
+            }
+        }
+        for (victim, x, z) in inside {
+            if !admit(c, victim, x, z) {
+                continue;
+            }
+            let Some(p) = c.potion.as_ref() else {
+                break;
+            };
+            let looks = (&p.hidden[..], &p.ambient[..], p.settings.duration_scale);
+            self.cloud_affect(victim, &p.effects, looks, c.at, &p.source, (p.owner, p.guest));
+            if !used(c) {
+                return false;
+            }
+        }
+        true
+    }
+    /// Whether a mod would lose a decision or a notice if this cloud's mob doses waited for
+    /// their place in the mob loop. The loop's doses check the vanilla tags and tell a mod's
+    /// `onEffectAdded`/`onEffectStarted` after it, while `cloud_affect` asks
+    /// `mob_effect_applicable` and tells the start before the mob's next tick; a cloud whose
+    /// doses need either keeps them here, before the mobs, as it did before #12183.
+    fn cloud_dose_needs_mods(&self, effects: &[(&'static str, i32, i32)]) -> bool {
+        use mod_api::HookId;
+        if mod_api::__private::listened(HookId::MobEffectApplicable) {
+            return true;
+        }
+        // `onEffectAdded`/`onEffectStarted` are told for a content mod's effect alone.
+        (mod_api::__private::listened(HookId::OnEffectAdded)
+            || mod_api::__private::listened(HookId::MobEffectAdded))
+            && effects.iter().any(|(id, ..)| {
+                brewing::effect(id).is_some_and(|def| def.index >= brewing::EFFECTS.len())
+            })
+    }
     /// `Creeper.spawnLingeringCloud`: an `AreaEffectCloud` of radius 2.5, wait time 10, duration 300,
     /// shrinking by `-radius / duration` a tick and by 0.5 for each entity it affects, applying
     /// the creeper's effects at 0.25 of their remaining duration.
@@ -1917,6 +2074,114 @@ impl Game<'_> {
                 guest: None,
             }),
         });
+    }
+    /// What a cloud puts on one entity: instant effects at half strength
+    /// (`applyInstantaneousEffect` with 0.5), the others at the cloud's duration
+    /// scale (`PotionContents.forEachEffect`). This is the path outside the mob
+    /// loop, where the mod hooks can be asked; the loop's own doses use the
+    /// vanilla tag checks (`affect_mob`) and tell their hooks after it.
+    pub(in crate::game) fn cloud_affect(
+        &mut self,
+        victim: Victim,
+        effects: &[(&'static str, i32, i32)],
+        (hidden, ambient, duration_scale): (&[&'static str], &[&'static str], f32),
+        at: [f64; 3],
+        source: &Text,
+        (owner, guest): (Option<Who>, Option<u32>),
+    ) {
+        // `indirectMagic(cloud, owner)` names the cloud in the death message
+        // (it gives no kill credit).
+        let cloud_owner = PotionOwner {
+            name: Some(source.clone()),
+            ..Default::default()
+        };
+        // MobEffectInstance.withScaledDuration: floor(duration * scale), at least 1; an infinite
+        // effect stays infinite.
+        let scaled = |duration| horizon_client::effects::scaled_duration(duration, duration_scale);
+        match victim {
+            Victim::Player(who) => self.as_fight_player(who, |g| {
+                for (id, duration, amp) in effects {
+                    let Some(e) = brewing::effect(id) else {
+                        continue;
+                    };
+                    if e.instant {
+                        if let Some(a) = horizon_client::effects::instant(id, *amp, 0.5) {
+                            g.apply_indirect_effect_action(a, &cloud_owner);
+                        }
+                    } else {
+                        let mut instance = EffectInstance::new(e.id, scaled(*duration), *amp);
+                        instance.visible = !hidden.contains(id);
+                        instance.ambient = ambient.contains(id);
+                        g.add_player_effect(instance);
+                    }
+                }
+            }),
+            Victim::Mob(mob) => {
+                let Some(i) = self.mobs.iter().position(|m| m.id == mob) else {
+                    return;
+                };
+                // Undead invert healing and harming.
+                let tags = &world_stations!(self).enchantments.entity_tags;
+                let inverted = tags
+                    .get("minecraft:inverted_healing_and_harm")
+                    .is_some_and(|t| t.contains(&self.mobs[i].kind.id));
+                for (id, duration, amp) in effects {
+                    // A mod's `onEffectAdded` may have changed the mobs.
+                    let Some(m) = self.mobs.iter_mut().find(|m| m.id == mob) else {
+                        return;
+                    };
+                    match *id {
+                        "instant_damage" | "instant_health" => {
+                            let amount = |base: i32| {
+                                (0.5 * f64::from(base.wrapping_shl(*amp as u32)) + 0.5) as i32
+                                    as f32
+                            };
+                            if (*id == "instant_damage") != inverted {
+                                // HealOrHarmMobEffect.applyInstantaneousEffect: indirectMagic(cloud, owner).
+                                let source = Damage::indirect_magic(owner, at);
+                                if m.damage_by(
+                                    crate::game::entity::damage_level_of!(self, scoped),
+                                    amount(6),
+                                    source,
+                                    "minecraft:area_effect_cloud",
+                                ) && owner == Some(Who::Player)
+                                    && let Some(uuid) = self.player_uuid_of(guest)
+                                {
+                                    self.last_hurt_by_player.insert(
+                                        mob,
+                                        PlayerCredit(ints_uuid(uuid)),
+                                    );
+                                }
+                            } else {
+                                m.heal(&self.loop_context, amount(4));
+                            }
+                        }
+                        _ => {
+                            // `LivingEntity.addEffect` refuses what the mob
+                            // cannot be affected by: the borrow ends before
+                            // the hook asks, and the mob is found again.
+                            let kind = m.kind.id.clone();
+                            if self.can_be_affected(Some(mob as i32), &kind, id)
+                                && let Some(name) = mob_effect_id(id)
+                            {
+                                let Some(m) = self.mobs.iter_mut().find(|m| m.id == mob) else {
+                                    return;
+                                };
+                                let new = !m.has_effect(name);
+                                m.add_effect_with(
+                                    name,
+                                    scaled(*duration),
+                                    *amp,
+                                    ambient.contains(id),
+                                    !hidden.contains(id),
+                                );
+                                self.mod_effect_added(name, Some(mob as i32), *amp, new);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     /// `ThrowableProjectile.tick`'s `applyGravity` and `applyInertia`, which
     /// come before the move: gravity 0.05 (0.07 for an experience bottle),

@@ -1419,7 +1419,6 @@ impl Game<'_> {
                 .extend(path_writes);
         }
         self.died = died;
-        self.finish_cloud_doses(doses);
         snapshot.clear();
         self.creatures.seen_buf = snapshot;
         self.creatures.ticked = ticked;
@@ -1437,8 +1436,13 @@ impl Game<'_> {
             // The successful final sweep consumed all pushes for surviving mobs.
             pending.pushes = Default::default();
         }
+        // Committed before the dose tail: a callback in it can unwind, and the
+        // retained output must not go with the local batch.
         self.creatures.pending.insert(level_id, pending);
         self.creatures.event_buf = events;
+        // The tail doses only of a pass that completed; the clouds go back
+        // into the level either way (`finish_cloud_doses`).
+        self.finish_cloud_doses(doses, &mut dead, dispatch_panic.is_none());
         if let Some(payload) = dispatch_panic {
             // Restoration may itself panic and replace this payload; a second
             // destructor panic may abort. panic=abort cannot recover at all.
