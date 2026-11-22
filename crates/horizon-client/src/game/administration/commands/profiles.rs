@@ -32,6 +32,16 @@ impl Game<'_> {
         horizon_gameplay::commands::profiles::stop(&mut ListsTarget { game: self, lists })
     }
 
+    pub(super) fn cmd_restart(&mut self) -> R<i32> {
+        let lists = self.dedicated_lists()?;
+        let reply = super::super::dedicated::request_restart(
+            super::super::dedicated::supervised(),
+            &mut lists.lock().unwrap().stop,
+        );
+        self.feedback(reply);
+        Ok(1)
+    }
+
     /// SaveAllCommand.saveAll: `commands.save.saving` to the source, then
     /// `commands.save.success` to it and the other operators, or the
     /// `ERROR_FAILED` it throws (result 0) when the save did not go through.
@@ -85,7 +95,10 @@ impl Game<'_> {
     /// SaveOffCommand and SaveOnCommand.
     pub(super) fn cmd_auto_save(&mut self, enabled: bool) -> R<i32> {
         let lists = self.dedicated_lists()?;
-        horizon_gameplay::commands::profiles::auto_save(&mut ListsTarget { game: self, lists }, enabled)
+        horizon_gameplay::commands::profiles::auto_save(
+            &mut ListsTarget { game: self, lists },
+            enabled,
+        )
     }
 
     /// `NameAndId` of a player target.
@@ -354,7 +367,10 @@ impl Game<'_> {
     /// command's result is the number of minutes.
     pub(super) fn cmd_setidle_timeout(&mut self, ctx: &Context) -> R<i32> {
         let lists = self.dedicated_lists()?;
-        horizon_gameplay::commands::profiles::setidle_timeout(&mut ListsTarget { game: self, lists }, ctx)
+        horizon_gameplay::commands::profiles::setidle_timeout(
+            &mut ListsTarget { game: self, lists },
+            ctx,
+        )
     }
 
     /// `TransferCommand.register` and `TransferCommand.transfer`: each target's
@@ -431,7 +447,11 @@ impl Game<'_> {
     /// `WhitelistCommand`: `on`, `off`, `list`, `reload`, `add` and `remove`.
     pub(super) fn cmd_whitelist(&mut self, id: &str, ctx: &Context) -> R<i32> {
         let lists = self.dedicated_lists()?;
-        horizon_gameplay::commands::profiles::whitelist(&mut ListsTarget { game: self, lists }, id, ctx)
+        horizon_gameplay::commands::profiles::whitelist(
+            &mut ListsTarget { game: self, lists },
+            id,
+            ctx,
+        )
     }
 }
 
