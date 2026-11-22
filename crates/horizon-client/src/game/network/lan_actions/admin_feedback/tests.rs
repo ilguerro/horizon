@@ -143,7 +143,7 @@ fn change_game_mode(game: &mut Game<'_>, conn: u32, permission: u8, integrated: 
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_level_zero_operator_hears_another_operators_command() {
     let mut game = crate::game::native_machines::tests::server_game();
     host(&mut game, false, 3, &[]);
@@ -177,7 +177,7 @@ fn a_level_zero_operator_hears_another_operators_command() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn only_the_owner_hears_an_integrated_servers_guest_command() {
     let mut game = crate::game::native_machines::tests::server_game();
     host(&mut game, true, 3, &[]);
@@ -213,7 +213,7 @@ fn only_the_owner_hears_an_integrated_servers_guest_command() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn an_integrated_server_without_commands_tells_no_one() {
     let mut game = crate::game::native_machines::tests::server_game();
     // `/trigger` is a level-0 command whose success vanilla broadcasts
