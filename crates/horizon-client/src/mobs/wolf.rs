@@ -28,24 +28,43 @@ pub fn armor_absorbs(m: &Mob, source: &Damage) -> bool {
         )
 }
 
-/// `Wolf.hurtArmor`: the body piece wears by `max(1, damage / 4)` on a hit the
-/// armour did not take, which `getDamageAfterArmorAbsorb` asks for every hit
-/// outside `#bypasses_armor`. `Wolf.actuallyHurt` skips `LivingEntity.actuallyHurt`,
-/// and with it that call, for the hits the armour does take — `hurt_armor`
-/// below wears those by `ceil(damage)` instead.
+/// `Wolf.hurtArmor` -> `doHurtEquipment`: the body piece wears by
+/// `max(1, damage / 4)` on a hit the armour did not take, which
+/// `getDamageAfterArmorAbsorb` asks for every hit outside `#bypasses_armor`.
+/// `Wolf.actuallyHurt` skips `LivingEntity.actuallyHurt`, and with it that
+/// call, for the hits the armour does take — [`hurt_armor`] below wears those
+/// by `ceil(damage)` instead.
+///
+/// The wear is put on the piece here, inside the hit, as vanilla's
+/// `doHurtEquipment` does: `canArmorAbsorb` reads the slot again on the next
+/// hit, so a wear still owed at the end of the tick would let armour this hit
+/// broke take another one.
 pub fn wears_body(m: &Mob, absorbed: bool) -> bool {
-    m.species() == Species::Wolf && !absorbed && m.extra.body_id().is_some()
+    m.species() == Species::Wolf && !absorbed && m.extra.body_id() == Some("minecraft:wolf_armor")
+}
+
+/// The `Wolf.hurtArmor` wear of a hit the armour did not take:
+/// `(int)Math.max(1.0F, damage / 4.0F)`.
+pub fn wear_body(m: &mut Mob, damage: f32) {
+    wear(m, ((damage / 4.0).max(1.0)) as i32);
 }
 
 /// `Wolf.actuallyHurt`: the armor loses `ceil(damage)` durability, cracks at
 /// `Crackiness.WOLF_ARMOR` steps and breaks at its maximum.
 pub fn hurt_armor(m: &mut Mob, damage: f32) {
+    wear(m, damage.ceil() as i32);
+}
+
+/// `ItemStack.hurtAndBreak`: the piece loses `amount` durability, cracks at the
+/// `Crackiness.WOLF_ARMOR` steps and breaks at its maximum, where
+/// `LivingEntity.onEquippedItemBroken` reports the slot's break.
+fn wear(m: &mut Mob, amount: i32) {
     let crack = |lost: i32| {
         let left = (WOLF_ARMOR_DURABILITY - lost) as f32 / WOLF_ARMOR_DURABILITY as f32;
         [0.95_f32, 0.69, 0.32].iter().filter(|t| left < **t).count()
     };
     let before = m.extra.body_damage();
-    let after = before + damage.ceil() as i32;
+    let after = before + amount;
     let at = [m.position.x, m.position.y, m.position.z];
     if after >= WOLF_ARMOR_DURABILITY {
         m.extra.set_body_stack(None);

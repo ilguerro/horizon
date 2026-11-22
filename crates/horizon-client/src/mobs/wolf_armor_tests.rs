@@ -38,6 +38,8 @@ fn owed(m: &Mob) -> Option<f32> {
 /// `LivingEntity.actuallyHurt` still asks `getDamageAfterArmorAbsorb`, and
 /// `Wolf.hurtArmor` hands `doHurtEquipment` the body slot: 24 thorns wear the
 /// piece by `max(1, 24 / 4) = 6`, and the wolf keeps the hit on its health.
+/// The wear is on the piece before the hit returns, as vanilla's
+/// `doHurtEquipment` runs inside `actuallyHurt`.
 /// A hit the armour does take skips that: `Wolf.actuallyHurt` wears it by
 /// `ceil(damage)` itself.
 #[test]
@@ -46,8 +48,12 @@ fn a_thorns_hit_wears_the_body_piece_it_does_not_absorb() {
     let level = &mut test_level.level();
     let mut m = wolf();
     assert!(m.damage(level, 24.0, thorns()), "the hit landed");
-    assert_eq!(owed(&m), Some(24.0), "the wear doHurtEquipment owes");
-    assert_eq!(m.extra.body_damage(), 0, "the armour absorbed nothing");
+    assert_eq!(m.extra.body_damage(), 6, "max(1, 24 / 4)");
+    assert_eq!(
+        owed(&m),
+        None,
+        "the host owes nothing at the end of the tick"
+    );
     assert!(m.health < 40.0, "the wolf took the hit: {}", m.health);
 
     let mut m = wolf();
@@ -57,6 +63,32 @@ fn a_thorns_hit_wears_the_body_piece_it_does_not_absorb() {
         owed(&m),
         None,
         "the armour took it, so hurtArmor is not asked"
+    );
+}
+
+/// The wear a hit owes is on the piece before the next hit reads the slot:
+/// 60 of 64 points and a thorns hit's six break it, so the bigger hit that
+/// follows in the same tick — inside the hurt cooldown, it only adds the
+/// difference — lands on the wolf instead of on armour that is gone.
+#[test]
+fn a_wear_that_breaks_the_piece_is_on_it_before_the_next_hit() {
+    let mut test_level = crate::health::TestLevel::new(0);
+    let level = &mut test_level.level();
+    let mut m = wolf();
+    m.health = 40.0;
+    m.extra.set_body_damage(60);
+    assert!(m.damage(level, 24.0, thorns()), "the thorns hit landed");
+    assert_eq!(m.extra.body_id(), None, "60 + max(1, 24 / 4) breaks it");
+    let before = m.health;
+    assert!(
+        m.damage(level, 40.0, Damage::of(DamageKind::MobAttack)),
+        "the second hit of the tick landed"
+    );
+    assert!(
+        m.health < before,
+        "no armour is left to absorb it: {} -> {}",
+        before,
+        m.health
     );
 }
 

@@ -1831,11 +1831,13 @@ pub enum MobEvent {
         velocities: Vec<Vec3>,
     },
     /// `LivingEntity.hurtArmor` (`doHurtEquipment`): a hit that landed on a mob
-    /// wearing body armour (a horse's, or a wolf's on a hit its armour did not
-    /// take) leaves the piece owing `max(1, damage / 4)` durability. The host
+    /// wearing body armour (a horse's, or a wolf's body item that is not its
+    /// armour) leaves the piece owing `max(1, damage / 4)` durability. The host
     /// applies it: it is the one that knows the item's maximum, whether it
     /// wears when hurt at all and whether a fire hit leaves it alone
-    /// (`ItemStack.canBeHurtBy`).
+    /// (`ItemStack.canBeHurtBy`). A wolf's wolf armour wears inside the hit
+    /// instead (`wolf::wear_body`): `canArmorAbsorb` reads the slot again on the
+    /// next one.
     ArmorHurt {
         mob: u32,
         amount: f32,
@@ -4157,15 +4159,23 @@ impl Mob {
         // armour did not take (`Wolf.actuallyHurt`). A player's four pieces
         // have their own, so the other "body slot" species — donkey, mule,
         // llama, camel, the skeleton and zombie horses — wear nothing.
+        // The wolf's own armour wears here, inside the hit, before the next one
+        // reads the slot (`Wolf.canArmorAbsorb`); a body item of another kind
+        // wears on the host, which knows its maximum and Unbreaking.
         if let Some(damage) = armor_hit
             && self.extra.body_id().is_some()
-            && (self.species() == Species::Horse || wolf::wears_body(self, absorbed))
         {
-            self.outbox.push(MobEvent::ArmorHurt {
-                mob: self.id,
-                amount: damage,
-                source: crate::health::mob_source(&source, level.attack()),
-            });
+            if wolf::wears_body(self, absorbed) {
+                wolf::wear_body(self, damage);
+            } else if self.species() == Species::Horse
+                || (self.species() == Species::Wolf && !absorbed)
+            {
+                self.outbox.push(MobEvent::ArmorHurt {
+                    mob: self.id,
+                    amount: damage,
+                    source: crate::health::mob_source(&source, level.attack()),
+                });
+            }
         }
         // Animal.actuallyHurt: damage taken ends love mode (`resetLove`).
         if drops::is_animal(self.species()) {
