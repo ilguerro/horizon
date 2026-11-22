@@ -189,6 +189,10 @@ capabilities = ['registries']
             game.health_resources.damage.id(shock).is_some(),
             "the world loaded the packaged type"
         );
+        assert!(
+            game.bypasses_invulnerability(shock),
+            "the reloaded catalog's bypass tag is the one the checks read"
+        );
 
         game.mobs.push(mob(game, 225015, "minecraft:pig"));
         let victim = game.entity(225015).unwrap();

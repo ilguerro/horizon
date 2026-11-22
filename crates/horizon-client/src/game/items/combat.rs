@@ -274,7 +274,7 @@ impl Game<'_> {
     }
     /// `DamageSource.is(DamageTypeTags.BYPASSES_INVULNERABILITY)`.
     pub(super) fn bypasses_invulnerability(&self, damage_type: &str) -> bool {
-        let registry = &self.motion.health.damage;
+        let registry = &self.health_resources.damage;
         registry
             .id(damage_type)
             .is_some_and(|kind| registry.in_tag(kind, "minecraft:bypasses_invulnerability"))
