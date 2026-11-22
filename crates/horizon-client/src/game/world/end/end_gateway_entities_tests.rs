@@ -74,7 +74,7 @@ fn assert_moved(position: Vec3, velocity: Vec3, motion: Vec3) {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn an_arrow_through_an_end_gateway_keeps_its_motion() {
     let mut game = world();
     let at = Vec3::new(40.5, 64.3, 8.5);
@@ -101,7 +101,7 @@ fn an_arrow_through_an_end_gateway_keeps_its_motion() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn an_experience_orb_through_an_end_gateway_keeps_its_motion() {
     let mut game = world();
     game.add_orb([40.5, 64.2, 8.5], 1);
@@ -118,7 +118,7 @@ fn an_experience_orb_through_an_end_gateway_keeps_its_motion() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn primed_tnt_through_an_end_gateway_keeps_its_motion() {
     let mut game = world();
     game.add_primed_tnt(
@@ -140,7 +140,7 @@ fn primed_tnt_through_an_end_gateway_keeps_its_motion() {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_falling_block_through_an_end_gateway_keeps_its_motion() {
     let mut game = world();
     let state = game
@@ -188,7 +188,7 @@ fn a_falling_block_through_an_end_gateway_keeps_its_motion() {
 
 /// The control: a mob already travelled before the fix; it keeps its motion.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_moving_mob_through_an_end_gateway_keeps_its_motion() {
     let mut game = world();
     let kind = game
