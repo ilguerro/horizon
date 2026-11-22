@@ -437,6 +437,11 @@ fn attackable_ignoring_sight(m: &mut Mob, w: &MobWorld, who: Who) -> bool {
 /// not allied, within `max(range * visibility, 2)` (no visibility scaling for
 /// the current `ATTACK_TARGET`, `Sensor`'s `IGNORE_INVISIBILITY` variant).
 fn combat_target(m: &mut Mob, w: &MobWorld, who: Who, range: Option<f64>, sight: bool) -> bool {
+    // `TargetingConditions.test` refuses the targeter itself: the charge scan
+    // walks the body's own box, which holds the nautilus too.
+    if who == Who::Mob(m.id) {
+        return false;
+    }
     let Some(t) = w.target_info(who) else {
         return false;
     };

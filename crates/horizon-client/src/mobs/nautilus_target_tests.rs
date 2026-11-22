@@ -141,3 +141,74 @@ fn a_nautilus_angers_only_at_an_attacker_in_its_follow_range() {
         "out of range: filtered, still angry"
     );
 }
+
+/// The events `ChargeAttack.tick` pushes for a nautilus (id 1) at `at` whose
+/// `ATTACK_TARGET` is mob 2, with `others` as its tick's snapshot and
+/// `teams` its scoreboard teams.
+fn charge(
+    others: &[crate::mobs::Seen],
+    at: Vec3,
+    teams: Option<crate::mobs::Teams<'_>>,
+) -> Option<Vec<MobEvent>> {
+    let mut events = Vec::new();
+    let ran = with_test_world(others, |w, types| {
+        let mut m = Mob::new(
+            1,
+            Arc::new(types.types["minecraft:nautilus"].clone()),
+            at,
+            0.0,
+        );
+        m.ai.target = Some(Who::Mob(2));
+        let mut world = w.clone();
+        if let Some(teams) = teams {
+            world.teams = std::sync::Arc::new(teams);
+        }
+        let mut goal = Charge::new(0.5);
+        let mut test_level = crate::health::TestLevel::new(1);
+        let level = &mut test_level.level();
+        let mut cx = Cx {
+            w: &world,
+            level,
+            events: &mut events,
+        };
+        goal.tick(&mut m, &mut cx);
+    });
+    ran.then_some(events)
+}
+
+/// `TargetingConditions.test` refuses the targeter itself, and the tick's
+/// snapshot holds the nautilus being ticked: its own row in the box is
+/// passed over for the cow there.
+#[test]
+fn a_charge_never_targets_the_nautilus_itself() {
+    let mut seen = None;
+    let ran = with_test_world(&[], |_, types| {
+        let nautilus = Arc::new(types.types["minecraft:nautilus"].clone());
+        let cow = Arc::new(types.types["minecraft:cow"].clone());
+        seen = Some([
+            Mob::new(1, nautilus, Vec3::new(0.5, 64.0, 0.2), 0.0)
+                .seen(None, &crate::items::Items::empty()),
+            Mob::new(2, cow, Vec3::new(0.5, 64.0, 0.2), 0.0)
+                .seen(None, &crate::items::Items::empty()),
+        ]);
+    });
+    let Some(others) = seen.filter(|_| ran) else {
+        return;
+    };
+    let Some(events) = charge(&others, Vec3::new(0.5, 64.0, 0.2), None) else {
+        return;
+    };
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, MobEvent::AttackMob { target: 2, .. })),
+        "the cow in the box takes the hit: {events:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, MobEvent::AttackMob { target: 1, .. })),
+        "it does not ram itself"
+    );
+}
+
