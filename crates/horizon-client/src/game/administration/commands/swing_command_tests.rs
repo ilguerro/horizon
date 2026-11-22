@@ -5,7 +5,7 @@ use super::super::super::native_machines::tests::server_game;
 use horizon_client::mobs::ai::tick_swing;
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_second_swing_inside_a_mobs_first_half_is_refused() {
     let mut game = server_game();
     game.build_registries();

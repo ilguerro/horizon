@@ -8,6 +8,7 @@ horizon-client game::big_dripleaf_tests::a_leaf_tilts_under_a_mob_an_item_a_boat
 horizon-client game::commands::modprofile::tests::modprofile_state_and_report_side_effects lib daily child-process
 horizon-client game::commands::selector_bounds_tests::actual_selector_uses_body_overlap_but_distance_stays_at_the_origin lib daily game-boot
 horizon-client game::commands::world_cmds::allay_owner_damage_tests::allay_owner_adapters_compare_the_actual_player_uuid lib daily game-boot
+horizon-client game::commands::world_cmds::swing_command_tests::a_second_swing_inside_a_mobs_first_half_is_refused lib daily resources
 horizon-client game::container_loot::tests::commands_clone_and_structures lib daily child-process
 horizon-client game::container_loot::tests::player_and_world_triggers lib daily child-process
 horizon-client game::container_loot::tests::random_selection_streams lib daily resources
@@ -46,6 +47,7 @@ horizon-client game::fishing::impact::tests::removing_a_bobber_in_its_impact_cle
 horizon-client game::gui_clips::dispatch_tests::a_hook_call_clips_what_its_mod_draws_and_closes_what_it_leaves_open lib daily resources
 horizon-client game::gui_entity::tests::a_screen_draws_a_mob_by_type_once_and_refuses_what_it_cant_draw lib daily game-boot
 horizon-client game::item_entities::orb_pickup_tests::a_player_picks_a_random_orb_not_the_first lib daily resources
+horizon-client game::lan::mob_states::mob_swing_animation_tests::a_mobs_spear_thrust_reaches_guests_as_a_stab lib daily resources
 horizon-client game::lan_actions::pickup_xp_tests::a_guest_picks_an_orb_with_their_own_random lib daily resources
 horizon-client game::lan_entities::tests::glowing_display_metadata_reaches_the_model_silhouettes lib daily resources
 horizon-client game::launch_api::tests::developer_offline_never_consumes_inherited_sessions lib daily child-process

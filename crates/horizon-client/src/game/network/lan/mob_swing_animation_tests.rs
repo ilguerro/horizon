@@ -6,7 +6,7 @@ use crate::game::native_machines::tests::server_game;
 use horizon_client::spear::Kinetic;
 
 #[test]
-#[ignore = "needs prepared resources and scratch homes/cwd"]
+#[ignore = "daily"]
 fn a_mobs_spear_thrust_reaches_guests_as_a_stab() {
     let mut game = server_game();
     game.build_registries();
