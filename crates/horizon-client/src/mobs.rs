@@ -4190,7 +4190,7 @@ impl Mob {
             };
             self.knockback(level, f64::from(0.4f32), dx, dz, &source, amount);
         }
-        ai::after_hurt(self, &source);
+        ai::after_hurt(self, &source, level.attack());
         if self.health <= 0.0 {
             self.health = 0.0;
             // `LivingEntity.hurtServer`: a killing blow is taken by a
