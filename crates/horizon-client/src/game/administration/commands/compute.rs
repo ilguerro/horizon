@@ -282,7 +282,7 @@ impl Game<'_> {
                             .count() as i32
                     }
                     "conditional" | "number_dispatcher" | "weighted_list" => {
-                        match self.provider_select(o, c)? {
+                        match self.provider_select(o, c, d)? {
                             Some(x) => self.provider_int(&x, c, d)?,
                             None => 0,
                         }
@@ -383,7 +383,7 @@ impl Game<'_> {
                         }
                     }
                     "conditional" | "number_dispatcher" | "weighted_list" => {
-                        match self.provider_select(o, c)? {
+                        match self.provider_select(o, c, d)? {
                             Some(x) => self.provider_float(&x, c, d)?,
                             None => 0.0,
                         }
@@ -395,10 +395,14 @@ impl Game<'_> {
         }
     }
     /// The branch a conditional, dispatcher or weighted list provider picks.
+    ///
+    /// `depth` is the calling provider's, so a condition that reads a provider
+    /// keeps counting levels (`provider_float`'s guard).
     fn provider_select(
         &mut self,
         o: &serde_json::Map<String, Value>,
         c: &ComputeContext,
+        depth: u32,
     ) -> Result<Option<Value>, Arith> {
         match o
             .get("type")
@@ -408,7 +412,7 @@ impl Game<'_> {
             Some("conditional") => {
                 let holds = o
                     .get("condition")
-                    .is_some_and(|x| self.compute_condition(x, c));
+                    .is_some_and(|x| self.compute_condition(x, c, depth));
                 Ok(if holds {
                     o.get("on_true").cloned()
                 } else {
@@ -424,7 +428,7 @@ impl Game<'_> {
                 {
                     if case
                         .get("condition")
-                        .is_some_and(|x| self.compute_condition(x, c))
+                        .is_some_and(|x| self.compute_condition(x, c, depth))
                     {
                         return Ok(case.get("value").cloned());
                     }
@@ -462,13 +466,16 @@ impl Game<'_> {
     }
     /// A loot condition in the compute context: references, the logical
     /// combinators and `match_block` on the context's block state.
-    fn compute_condition(&mut self, cond: &Value, c: &ComputeContext) -> bool {
+    ///
+    /// `depth` is the calling provider's: a `random_chance` chance continues
+    /// from it instead of starting over.
+    fn compute_condition(&mut self, cond: &Value, c: &ComputeContext, depth: u32) -> bool {
         match cond {
             Value::String(id) => match self.provider_file("minecraft:predicate", id) {
-                Some(def) => self.compute_condition(&def, c),
+                Some(def) => self.compute_condition(&def, c, depth),
                 None => false,
             },
-            Value::Array(list) => list.iter().all(|x| self.compute_condition(x, c)),
+            Value::Array(list) => list.iter().all(|x| self.compute_condition(x, c, depth)),
             Value::Object(o) => {
                 let ty = o
                     .get("type")
@@ -477,19 +484,21 @@ impl Game<'_> {
                     .unwrap_or("")
                     .trim_start_matches("minecraft:");
                 match ty {
-                    "inverted" => !o.get("term").is_some_and(|x| self.compute_condition(x, c)),
+                    "inverted" => !o
+                        .get("term")
+                        .is_some_and(|x| self.compute_condition(x, c, depth)),
                     "all_of" => o
                         .get("terms")
                         .and_then(Value::as_array)
                         .into_iter()
                         .flatten()
-                        .all(|x| self.compute_condition(x, c)),
+                        .all(|x| self.compute_condition(x, c, depth)),
                     "any_of" => o
                         .get("terms")
                         .and_then(Value::as_array)
                         .into_iter()
                         .flatten()
-                        .any(|x| self.compute_condition(x, c)),
+                        .any(|x| self.compute_condition(x, c, depth)),
                     "match_block" | "block_state_property" => {
                         let Some(p) = c.block else {
                             return false;
@@ -532,7 +541,7 @@ impl Game<'_> {
                         // reads as 0 (so the draw always fails).
                         let chance = o
                             .get("chance")
-                            .map_or(0.0, |v| self.provider_float(v, c, 0).unwrap_or(0.0));
+                            .map_or(0.0, |v| self.provider_float(v, c, depth).unwrap_or(0.0));
                         let chance = if chance.is_finite() { chance } else { 0.0 };
                         self.world.random.next_float() < chance
                     }

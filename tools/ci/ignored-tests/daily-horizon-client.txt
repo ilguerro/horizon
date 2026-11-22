@@ -7,6 +7,7 @@ horizon-client game::big_dripleaf_tests::a_leaf_stays_flat_under_an_entity_that_
 horizon-client game::big_dripleaf_tests::a_leaf_tilts_under_a_mob_an_item_a_boat_a_minecart_and_a_trident lib daily resources
 horizon-client game::commands::compute::compute_condition_tests::a_conditional_reads_its_random_chance_provider lib daily resources
 horizon-client game::commands::compute::compute_condition_tests::a_non_finite_binomial_probability_fails_the_command lib daily resources
+horizon-client game::commands::compute::compute_condition_tests::a_self_referencing_random_chance_provider_stops_at_the_depth_guard lib daily resources
 horizon-client game::commands::modprofile::tests::modprofile_state_and_report_side_effects lib daily child-process
 horizon-client game::commands::selector_bounds_tests::actual_selector_uses_body_overlap_but_distance_stays_at_the_origin lib daily game-boot
 horizon-client game::commands::world_cmds::allay_owner_damage_tests::allay_owner_adapters_compare_the_actual_player_uuid lib daily game-boot

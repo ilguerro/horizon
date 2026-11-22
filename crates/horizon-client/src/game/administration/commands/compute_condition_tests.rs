@@ -9,12 +9,18 @@ use horizon_client::motion::PlayerMotion;
 use std::sync::Arc;
 
 fn game() -> Game<'static> {
+    game_with(None)
+}
+
+/// A game over the prepared resources, with `providers` (a data-pack folder)
+/// as its context providers when one is given.
+fn game_with(providers: Option<&std::path::Path>) -> Game<'static> {
     let root = std::path::PathBuf::from(
         std::env::var_os("HORIZON_TEST_RESOURCES")
             .expect("set HORIZON_TEST_RESOURCES to prepared resources"),
     );
     let settings = Settings::default();
-    let loaded = load_resources(
+    let mut loaded = load_resources(
         horizon_assets::resource_source::ResourceRoot::directory(root.clone()),
         Vec::new(),
         None,
@@ -27,6 +33,14 @@ fn game() -> Game<'static> {
         &mut |_, _| unreachable!(),
     )
     .unwrap();
+    if let Some(dir) = providers {
+        Arc::get_mut(&mut loaded.resources)
+            .unwrap()
+            .rest
+            .get_mut()
+            .unwrap()
+            .providers = horizon_client::providers::Providers::load(dir);
+    }
     let mut options = Options::parse(std::iter::empty()).unwrap().unwrap();
     options.resources = root.clone();
     options.execution_role = execution_role::ExecutionRole::IntegratedServer;
@@ -133,4 +147,39 @@ fn a_non_finite_binomial_probability_fails_the_command() {
         only(&said),
         "Number provider returned invalid value (Invalid value: Infinity)"
     );
+}
+
+/// A data-pack folder holding one self-referencing float provider: `loop` is a
+/// conditional whose `random_chance` chance refers back to `loop`, which the
+/// registry loader accepts (a `chance` reference is bound with `follow: false`).
+fn self_referencing_providers() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "horizon-compute-self-reference-{}",
+        std::process::id()
+    ));
+    let providers = dir.join("data/minecraft/context_float_provider");
+    std::fs::create_dir_all(&providers).unwrap();
+    std::fs::write(
+        providers.join("loop.json"),
+        r#"{"type":"conditional","condition":{"type":"minecraft:random_chance","chance":"minecraft:loop"},"on_true":1.0,"on_false":0.0}"#,
+    )
+    .unwrap();
+    dir
+}
+
+/// A provider that reads its own chance must hit `provider_float`'s `depth >
+/// 64` guard instead of recursing without bound: the guarded read is 0, so the
+/// chance never holds and the conditional picks `on_false`.
+#[test]
+#[ignore = "daily"]
+fn a_self_referencing_random_chance_provider_stops_at_the_depth_guard() {
+    let providers = self_referencing_providers();
+    let mut game = game_with(Some(&providers));
+    std::fs::remove_dir_all(&providers).unwrap();
+    let (ok, said) = run(
+        &mut game,
+        r#"compute default integer {type:"minecraft:conditional",condition:{type:"minecraft:random_chance",chance:"minecraft:loop"},on_true:5,on_false:7}"#,
+    );
+    assert!(ok, "{said:?}");
+    assert_eq!(only(&said), "Number provider returned value 7");
 }
