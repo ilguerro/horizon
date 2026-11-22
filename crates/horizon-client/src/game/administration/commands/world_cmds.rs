@@ -333,6 +333,15 @@ impl Game<'_> {
                     Some(Target::Guest(conn)) if self.lan_acting != Some(conn) => Some(conn),
                     _ => None,
                 };
+                // `DamageSource.getDirectEntity`: the command's `by` entity, which the
+                // damage type cannot name (`/damage ... trident by @s` has a player direct).
+                let direct_type = match by {
+                    None => Some(None),
+                    Some(t) => {
+                        let ty = self.target_type(t);
+                        (!ty.is_empty()).then_some(Some(ty))
+                    }
+                };
                 // Keep the source in scope across the replaceable mob damage call.
                 let previous_bullet_damage =
                     std::mem::replace(&mut self.command_damage_by_shulker_bullet, bullet);
@@ -340,7 +349,17 @@ impl Game<'_> {
                     let attack = self.current_attack();
                     let hurt = self
                         .as_guest(conn, |g| {
-                            g.with_attack(attack, |g| g.command_damage_mob(id, amount, damage))
+                            let hurt = g.with_attack(attack, |g| {
+                                g.command_damage_mob(id, amount, damage)
+                            });
+                            // `DamageSource.getDirectEntity` as the command built it, for
+                            // the death message's advancement and loot views.
+                            if hurt && let Some(direct) = &direct_type
+                                && let Some(m) = g.mobs.iter_mut().find(|m| m.id == id)
+                            {
+                                m.last_direct = Some(direct.clone());
+                            }
+                            hurt
                         })
                         .unwrap_or(false);
                     if hurt && let Some(host) = self.lan.as_mut() {
@@ -348,7 +367,13 @@ impl Game<'_> {
                     }
                     hurt
                 } else {
-                    self.command_damage_mob(id, amount, damage)
+                    let hurt = self.command_damage_mob(id, amount, damage);
+                    if hurt && let Some(direct) = &direct_type
+                        && let Some(m) = self.mobs.iter_mut().find(|m| m.id == id)
+                    {
+                        m.last_direct = Some(direct.clone());
+                    }
+                    hurt
                 };
                 self.command_damage_by_shulker_bullet = previous_bullet_damage;
                 hurt

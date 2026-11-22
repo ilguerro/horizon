@@ -978,33 +978,7 @@ pub fn prime_with_fuse(m: &mut Mob, imminent: bool, fuse: i32) -> bool {
 /// `#sulfur_cube_with_block_immune_to`: the damage a cube with a block shrugs off and is only
 /// knocked by.
 pub fn immune_to(source: &Damage) -> bool {
-    matches!(
-        source.kind,
-        DamageKind::PlayerAttack
-            | DamageKind::MaceSmash
-            | DamageKind::Spear
-            | DamageKind::MobAttack
-            | DamageKind::MobAttackNoAggro
-            | DamageKind::Arrow
-            | DamageKind::Trident
-            | DamageKind::Thrown
-            | DamageKind::Explosion
-            | DamageKind::Fireworks
-            | DamageKind::Fall
-            | DamageKind::Sting
-            | DamageKind::Cactus
-            | DamageKind::Freeze
-            | DamageKind::SweetBerryBush
-            | DamageKind::HotFloor
-            | DamageKind::FallingAnvil
-            | DamageKind::FallingBlock
-            | DamageKind::FallingStalactite
-            | DamageKind::DryOut
-            | DamageKind::Spit
-            | DamageKind::Stalagmite
-            | DamageKind::SulfurCubeHot
-            | DamageKind::WindCharge
-    )
+    source.sulfur_cube_with_block_immune_to()
 }
 /// `hurtServer`: fire or `#is_explosion` (a firework rocket's burst too)
 /// light an explosive cube; with a block it shrugs off blows, falls and

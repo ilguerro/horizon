@@ -1711,13 +1711,29 @@ impl Game<'_> {
     fn last_blow(&self, m: &Mob) -> Option<horizon_client::advancements::DamageView> {
         let (d, _) = m.last_damage?;
         let mut view = self.damage_view(d);
-        if let Some(kind) = m.last_direct {
-            view.direct = Some(horizon_client::advancements::EntityView {
-                kind: kind.into(),
-                position: d.from.unwrap_or_default(),
-                ..Default::default()
-            });
-            view.is_direct = false;
+        if let Some(direct) = &m.last_direct {
+            match direct {
+                // The source names the actual direct entity: it is the causing one only
+                // when their types agree (`DamageSource.isDirect`).
+                Some(kind) => {
+                    let same = view.source.as_ref().is_some_and(|s| s.kind == *kind);
+                    view.direct = if same {
+                        view.source.clone()
+                    } else {
+                        Some(horizon_client::advancements::EntityView {
+                            kind: kind.clone(),
+                            position: d.from.unwrap_or_default(),
+                            ..Default::default()
+                        })
+                    };
+                    view.is_direct = same;
+                }
+                // An explicit source with no direct entity.
+                None => {
+                    view.direct = None;
+                    view.is_direct = view.source.is_none();
+                }
+            }
         }
         Some(view)
     }

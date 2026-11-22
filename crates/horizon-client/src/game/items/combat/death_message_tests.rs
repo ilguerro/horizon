@@ -49,6 +49,11 @@ fn a_trident_kills_with_the_trident_message() {
     .unwrap();
     let pet = game.mobs.iter().find(|m| m.id == 91).unwrap().clone();
     assert!(!pet.alive(), "the trident's 8 damage must kill a wolf at 1");
+    // A real projectile is the direct entity, named by the damage type.
+    assert_eq!(pet.last_direct, None);
+    let view = game.damage_view(pet.last_damage.unwrap().0);
+    assert_eq!(view.direct.as_ref().unwrap().kind, "minecraft:trident");
+    assert!(!view.is_direct, "the trident is not its owner");
     // TamableAnimal.die tells the owner how it died.
     game.tell_owner_pet_died(&pet, None);
     let said = game.chat_capture.take().unwrap_or_default();

@@ -208,12 +208,21 @@ impl Game<'_> {
                     }),
                 None => None,
             };
-            let direct = match projectile_entity(d.kind) {
-                Some(kind) => Some(LootEntity {
-                    kind: kind.into(),
+            let direct = match &m.last_direct {
+                // A command or mod's explicit direct entity, which the damage type cannot name.
+                Some(Some(kind)) if source.as_ref().is_some_and(|s| s.kind == *kind) => source.clone(),
+                Some(Some(kind)) => Some(LootEntity {
+                    kind: kind.clone(),
                     ..LootEntity::default()
                 }),
-                None => source.clone(),
+                Some(None) => None,
+                None => match projectile_entity(d.kind) {
+                    Some(kind) => Some(LootEntity {
+                        kind: kind.into(),
+                        ..LootEntity::default()
+                    }),
+                    None => source.clone(),
+                },
             };
             LootDamage {
                 kind: source_damage_type(d).into(),
