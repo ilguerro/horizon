@@ -101,7 +101,7 @@ pub fn parse_consumable(
             .or_else(|| cons["sound"]["sound_id"].as_str())
             .unwrap_or("minecraft:entity.generic.eat")
             .to_owned(),
-        particles: cons["has_consume_particles"].as_bool().unwrap_or(true),
+        particles: json_flag(&cons["has_consume_particles"]).unwrap_or(true),
         effects: cons["on_consume_effects"]
             .as_array()
             .into_iter()
@@ -178,7 +178,7 @@ pub fn parse_consume_effect(effect: &serde_json::Value) -> Option<ConsumeEffect>
                     .map_or(16.0, |d| d as f32),
                 directional_particles: effect
                     .get("directional_particles")
-                    .and_then(serde_json::Value::as_bool)
+                    .and_then(json_flag)
                     .unwrap_or(true),
             },
         )),
@@ -365,11 +365,16 @@ fn sound_event(v: &Value) -> Option<String> {
 impl BlocksAttacks {
     /// The `blocks_attacks` `stack` has (`ItemStack.get(DataComponents.BLOCKS_ATTACKS)`):
     /// its own component when it carries one (`/give @s diamond_sword[blocks_attacks={}]`,
-    /// or a server's item), else its item's (`item`, a shield's).
+    /// or a server's item), else its item's (`item`, a shield's). A
+    /// `!minecraft:blocks_attacks` removal patch leaves the lookup empty, so
+    /// the item's component does not come back.
     pub fn of_stack<'a>(
         stack: &ItemStack,
         item: Option<&'a ItemInfo>,
     ) -> Option<std::borrow::Cow<'a, Self>> {
+        if !stack.carries_component(item, "minecraft:blocks_attacks") {
+            return None;
+        }
         if let Some(own) = stack
             .data()
             .and_then(|d| d.other("minecraft:blocks_attacks"))
@@ -440,6 +445,12 @@ pub struct ItemStack {
     pub damage: u32,
     /// Components beyond count and damage (see `item_data`); None when default.
     pub extra: Option<Box<crate::item_data::StackData>>,
+}
+impl std::hash::Hash for ItemStack {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.count, state);
+        self.hash_item_and_components(state);
+    }
 }
 /// `order`'s items in the registry's order (`command-registries.json`'s
 /// `items`, exported from the game); `order` itself when that is missing.
@@ -578,6 +589,12 @@ pub fn instrument_id(stack: &ItemStack) -> Option<String> {
     if &*stack.item != "minecraft:goat_horn" {
         return None;
     }
+    if stack
+        .data()
+        .is_some_and(|d| d.other("!minecraft:instrument").is_some())
+    {
+        return None;
+    }
     match stack.data().and_then(|d| d.other("minecraft:instrument")) {
         Some(horizon_core::nbt::Tag::String(id)) => Some(id.to_string_lossy()),
         Some(horizon_core::nbt::Tag::Compound(_)) => None,
@@ -702,16 +719,7 @@ pub(crate) fn load_tag_lists(
             raw.entry(id.to_owned()).or_default().push(&v);
         }
     }
-    fn resolve(name: &str, raw: &HashMap<String, TagLayers>, depth: u32) -> Vec<String> {
-        match raw.get(name) {
-            Some(layers) if depth <= 32 => layers.build(|tag| resolve(tag, raw, depth + 1)),
-            _ => Vec::new(),
-        }
-    }
-    Ok(raw
-        .keys()
-        .map(|k| (k.clone(), resolve(k, &raw, 0)))
-        .collect())
+    Ok(TagLayers::resolve_all(raw))
 }
 /// An entity type id or `#tag` as the set of entity type ids it names.
 fn entity_spec(tags: &HashMap<String, HashSet<String>>, spec: &str) -> HashSet<String> {
@@ -1570,7 +1578,10 @@ impl Items {
     }
     /// `Block.getDrops`: the block's loot table rolled with `roll`, drawing
     /// from the table's random sequence when it has one (`sequences`: the
-    /// world's sequences and seed), else from `random`.
+    /// world's sequences and seed), else from `random`. The results come
+    /// before `LootTable.createStackSplitter`, one per result, so a caller can
+    /// copy the block entity's components onto each first; then it splits
+    /// them with [`Self::split_stacks`].
     pub fn block_drops(
         &self,
         registry: &BlockRegistry,
@@ -1593,6 +1604,14 @@ impl Items {
                 }
             })
             .collect()
+    }
+    /// `LootTable.createStackSplitter` over [`Self::block_drops`]' results, in order.
+    pub fn split_stacks(&self, stacks: Vec<ItemStack>) -> Vec<ItemStack> {
+        let mut out = Vec::with_capacity(stacks.len());
+        for stack in stacks {
+            split_stack(self, stack, &mut out);
+        }
+        out
     }
 
     fn roll_block_table<R: RandomSource>(
@@ -1667,23 +1686,9 @@ impl Items {
         this_entity: bool,
         random: &mut R,
     ) -> Option<Vec<ItemStack>> {
-        let raw = self.table_raw(id, false, held, this_entity, random, false)?;
-        // LootTable.createStackSplitter.
-        let mut out = Vec::with_capacity(raw.len());
-        for stack in raw {
-            let max = crate::bundle::max_stack(self, &stack);
-            let mut count = stack.count;
-            while count > max {
-                let mut part = stack.clone();
-                part.count = max;
-                out.push(part);
-                count -= max;
-            }
-            out.push(ItemStack { count, ..stack });
-        }
-        Some(out)
+        self.table_raw(id, false, held, this_entity, random, false)
     }
-    /// `LootTable.getRandomItemsRaw` of table `id` with no block.
+    /// `LootTable.getRandomItems` of table `id` with no block (split stacks).
     fn table_raw<R: RandomSource>(
         &self,
         id: &str,
@@ -1712,7 +1717,7 @@ impl Items {
         };
         // LootTable.getRandomItemsRaw visits the table itself first.
         NESTED_ROLLS.with(|v| v.borrow_mut().push(id.to_owned()));
-        let out = ctx.evaluate(table, random);
+        let out = ctx.roll(table, random);
         ctx.query.finish(Some(id));
         NESTED_ROLLS.with(|v| v.borrow_mut().pop());
         Some(out)
@@ -1746,7 +1751,7 @@ impl Items {
             location: None,
             keep_empty: false,
         };
-        ctx.evaluate(table, random)
+        ctx.roll(table, random)
     }
     /// `loot_table` drawing from any random (a random sequence).
     pub fn loot_table_from(
@@ -1918,6 +1923,24 @@ impl Items {
 /// `DataComponents.BLOCK_STATE`.
 const BLOCK_STATE: &str = "minecraft:block_state";
 impl<R: RandomSource> LootContext<'_, R> {
+    /// `LootTable.getRandomItems`: the table's stacks through
+    /// `LootTable.createStackSplitter`, so none is larger than its stack size.
+    /// The splitter draws nothing from `random`. A nested table entry rolls
+    /// `getRandomItemsRaw` ([`Self::evaluate`]), unsplit.
+    fn roll(&self, table: &Value, random: &mut R) -> Vec<ItemStack> {
+        let raw = self.evaluate(table, random);
+        let mut out = Vec::with_capacity(raw.len());
+        for stack in raw {
+            // A `minecraft:dynamic` marker becomes the dynamic drops later, whatever its count.
+            if stack.item.starts_with(DYNAMIC) {
+                out.push(stack);
+            } else {
+                split_stack(self.items, stack, &mut out);
+            }
+        }
+        out
+    }
+    /// `LootTable.getRandomItemsRaw`.
     fn evaluate(&self, table: &Value, random: &mut R) -> Vec<ItemStack> {
         let ctx = self;
         let mut out = Vec::new();
@@ -1944,6 +1967,33 @@ impl<R: RandomSource> LootContext<'_, R> {
             }
         }
         out
+    }
+}
+/// `LootTable.createStackSplitter` (every item is enabled): a stack below its
+/// stack size as it is, else copies of at most the stack size, in order. The
+/// size is the stack's own `max_stack_size` (1 when it removes it), else its
+/// item's (64 when the item has no facts, `Item.Properties`' default, as
+/// `Items::load` and the world's loot facts give it).
+fn split_stack(items: &Items, stack: ItemStack, out: &mut Vec<ItemStack>) {
+    let info = items.get(&stack.item);
+    let removed = stack
+        .data()
+        .is_some_and(|data| data.other("!minecraft:max_stack_size").is_some());
+    let max = if removed || stack.carries_component(None, "minecraft:max_stack_size") {
+        crate::bundle::max_stack(items, &stack)
+    } else {
+        info.map_or(64, |info| info.max_stack.max(1))
+    };
+    if stack.count < max {
+        out.push(stack);
+        return;
+    }
+    let mut count = stack.count;
+    while count > 0 {
+        let mut copy = stack.clone();
+        copy.count = max.min(count);
+        count -= copy.count;
+        out.push(copy);
     }
 }
 /// What a roll asks when its table reads an enchantment level: given the
@@ -2883,10 +2933,35 @@ mod death_effects_tests {
                 .is_empty()
         );
     }
+
+    #[test]
+    fn effect_flags_read_as_bytes_too() {
+        let spec = consume_effect_spec(&serde_json::json!({
+            "id": "minecraft:nausea",
+            "duration": 40,
+            "show_particles": 0,
+            "show_icon": 0
+        }))
+        .unwrap();
+        assert!(!spec.show_particles && !spec.show_icon);
+        let spec = consume_effect_spec(
+            &serde_json::json!({"id": "minecraft:nausea", "show_particles": 1}),
+        )
+        .unwrap();
+        assert!(spec.show_particles && spec.show_icon);
+        assert_eq!(json_flag(&serde_json::json!(true)), Some(true));
+        assert_eq!(json_flag(&serde_json::json!("x")), None);
+    }
+}
+
+/// A flag as `Codec.BOOL` reads it: a boolean, or a number (a component's
+/// `0b`/`1b` arrives as a number through NBT), non-zero being true.
+fn json_flag(v: &Value) -> Option<bool> {
+    v.as_bool().or_else(|| v.as_f64().map(|n| n != 0.0))
 }
 
 fn consume_effect_spec(e: &Value) -> Option<ConsumeEffectSpec> {
-    let flag = |key: &str, default: bool| e.get(key).and_then(|v| v.as_bool()).unwrap_or(default);
+    let flag = |key: &str, default: bool| e.get(key).and_then(json_flag).unwrap_or(default);
     Some(ConsumeEffectSpec {
         id: e.get("id")?.as_str()?.to_string(),
         duration: e.get("duration").and_then(|d| d.as_i64()).unwrap_or(0) as i32,
@@ -2951,6 +3026,26 @@ pub(crate) fn prepared_items() -> Option<Items> {
 #[cfg(test)]
 mod consume_effect_tests {
     use super::*;
+
+    #[test]
+    fn teleport_effect_keeps_numeric_particle_flags() {
+        let mut effect = serde_json::json!({"type": "minecraft:teleport_randomly"});
+        let particles = |effect: &Value| {
+            let Some(ConsumeEffect::TeleportRandomly(teleport)) = parse_consume_effect(effect)
+            else {
+                panic!("expected a teleport consume effect");
+            };
+            teleport.directional_particles
+        };
+
+        assert!(particles(&effect));
+        effect["directional_particles"] = serde_json::json!(0);
+        assert!(!particles(&effect));
+        effect["directional_particles"] = serde_json::json!(1);
+        assert!(particles(&effect));
+        effect["directional_particles"] = serde_json::json!(false);
+        assert!(!particles(&effect));
+    }
 
     #[test]
     fn effects_keep_their_ambient_and_particle_flags() {
@@ -3606,6 +3701,71 @@ mod tests {
         assert!(items.item_in_tag("test:items", "test:apple"));
         assert!(!items.item_in_tag("test:items", "test:stone"));
         assert!(!items.item_in_tag("test:missing", "test:apple"));
+    }
+
+    /// `LootTable.createStackSplitter`: a block's or a mob's drop above its
+    /// item's stack size comes out as stacks of at most that size, in order,
+    /// an unstackable item one by one; splitting draws nothing from the random.
+    #[test]
+    fn oversized_drops_split_into_full_stacks() {
+        let mut items = Items::for_tests(HashMap::new());
+        for (id, max) in [
+            ("minecraft:ender_pearl", 16),
+            ("minecraft:diamond_sword", 1),
+        ] {
+            items.items.insert(
+                Arc::from(id),
+                ItemInfo {
+                    id: Arc::from(id),
+                    max_stack: max,
+                    components: vec!["minecraft:max_stack_size".into()],
+                    ..ItemInfo::default()
+                },
+            );
+        }
+        let table = json!({"pools":[
+            {"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:ender_pearl",
+                "modifier":[{"type":"minecraft:set_count","count":40}]}]},
+            {"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:diamond_sword",
+                "modifier":[{"type":"minecraft:set_count","count":3}]}]},
+            {"rolls":1,"condition":{"type":"minecraft:random_chance","chance":0.0},"entries":[
+                {"type":"minecraft:item","name":"minecraft:stick"}]}]});
+        items.loot = Arc::new(
+            [("minecraft:entities/test".to_owned(), table.clone())]
+                .into_iter()
+                .collect(),
+        );
+        let summary = |drops: Vec<ItemStack>| {
+            drops
+                .into_iter()
+                .map(|s| format!("{} {}", s.item, s.count))
+                .collect::<Vec<_>>()
+        };
+        let expected = [
+            "minecraft:ender_pearl 16",
+            "minecraft:ender_pearl 16",
+            "minecraft:ender_pearl 8",
+            "minecraft:diamond_sword 1",
+            "minecraft:diamond_sword 1",
+            "minecraft:diamond_sword 1",
+        ];
+        let props = horizon_world::chunk::BlockProperties::new();
+        let mut random = LegacyRandom::new(5);
+        let block = items.roll_block_table(
+            &table,
+            "minecraft:stone",
+            &props,
+            BlockLootRoll::default(),
+            &mut random,
+        );
+        assert_eq!(summary(items.split_stacks(block)), expected);
+        let mut unsplit = LegacyRandom::new(5);
+        let _ = ctx(&items, None, &props, "minecraft:stone").evaluate(&table, &mut unsplit);
+        // The last pool's chance draws: the random has moved on, as far as unsplit.
+        assert_ne!(random.clone().next_long(), LegacyRandom::new(5).next_long());
+        assert_eq!(random.next_long(), unsplit.next_long());
+        let mob = items.entity_drops("minecraft:test", false, None, &mut LegacyRandom::new(5));
+        assert_eq!(summary(mob), expected);
     }
 
     /// `NestedLootTable`: a `loot_table` entry, by id or inline, rolls that

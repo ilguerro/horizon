@@ -412,7 +412,8 @@ impl Session {
             if let Some(w) = thread_writer.lock().unwrap().take() {
                 w.shutdown();
             }
-            let _ = send.send(Event::Disconnected {
+            // Nothing else tells the game the connection ended: wait for room (#18380).
+            let _ = send.send_waiting(Event::Disconnected {
                 reason: why.text,
                 key: why.key,
                 from_server,
@@ -833,10 +834,24 @@ impl Reason {
     /// kicks have none; their text is the server's own language).
     fn component(reason_json: &str, lang: &Language) -> Self {
         match serde_json::from_str::<serde_json::Value>(reason_json) {
-            Ok(v) => Self {
-                text: json_text(&v, lang),
-                key: v["translate"].as_str().map(str::to_owned),
-            },
+            Ok(v) => {
+                let text = json_text(&v, lang);
+                let root = v.as_array().and_then(|a| a.first()).unwrap_or(&v);
+                Self {
+                    text: if text.is_empty()
+                        && !is_json_component(&v, 0)
+                        && !reason_json.trim().is_empty()
+                    {
+                        reason_json.chars().take(200).collect()
+                    } else {
+                        text
+                    },
+                    key: root
+                        .get("translate")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned),
+                }
+            }
             Err(_) => Self::plain(reason_json),
         }
     }
@@ -903,10 +918,15 @@ fn connect_tcp(
     Ok((c, host, port))
 }
 
-/// Whether joining servers of older releases is on (roadmap `older-servers`): off by default while the
-/// adapter is incomplete; `HORIZON_OLDER_SERVERS=1` turns it on.
+/// Whether joining servers of older releases is on (roadmap `older-servers`): on by default;
+/// `HORIZON_OLDER_SERVERS=0` turns it off.
 pub fn older_servers_enabled() -> bool {
-    std::env::var_os("HORIZON_OLDER_SERVERS").is_some_and(|v| v == "1")
+    older_servers_setting(std::env::var_os("HORIZON_OLDER_SERVERS").as_deref())
+}
+
+/// [`older_servers_enabled`] for a given `HORIZON_OLDER_SERVERS` value: only `0` turns it off.
+fn older_servers_setting(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_none_or(|v| v != "0")
 }
 
 /// The older release a server speaks, by its status ping, when Horizon can translate it; `None` for the
@@ -1137,12 +1157,17 @@ fn run(
         cookies,
         resources,
         payloads,
+        true,
     )?;
-    let _ = send.send(Event::Joined {
-        registries: Arc::new(registries),
-        uuid: profile.uuid,
-        name: profile.name,
-    });
+    deliver(
+        send,
+        lang,
+        Event::Joined {
+            registries: Arc::new(registries),
+            uuid: profile.uuid,
+            name: profile.name,
+        },
+    )?;
     receive_play(
         &mut reader,
         shared_writer,
@@ -1214,16 +1239,28 @@ fn receive_play(
             }
             play::Clientbound::StartConfiguration(_) => {
                 payloads.begin_configuration();
-                configuring.store(true, Ordering::Release);
-                let _ = send.send(Event::Reconfiguring);
-                if let Some(w) = shared_writer.lock().unwrap().as_mut() {
-                    w.transition_protocol(
-                        horizon_protocol::payload_negotiation::Phase::Configuration,
-                        &play::Serverbound::ConfigurationAcknowledged(Empty).encode(),
-                    )
-                    .map_err(|error| Reason::plain(connection_lost(error, lang)))?;
-                    configuring.store(true, Ordering::Relaxed);
+                {
+                    // The game encodes its answers by `configuring`, read under this
+                    // lock: it turns only once the acknowledgement is queued, or an
+                    // answer could reach the server as configuration while it still
+                    // reads play (#18380).
+                    let mut writer = shared_writer.lock().unwrap();
+                    #[cfg(test)]
+                    tests::observe_phase_at_acknowledgement(configuring);
+                    if let Some(w) = writer.as_mut() {
+                        w.transition_protocol(
+                            horizon_protocol::payload_negotiation::Phase::Configuration,
+                            &play::Serverbound::ConfigurationAcknowledged(Empty).encode(),
+                        )
+                        .map_err(|error| Reason::plain(connection_lost(error, lang)))?;
+                    }
+                    configuring.store(true, Ordering::Release);
                 }
+                // Past the budget rather than waiting for it: configuration's keepalives
+                // and known packs are answered on this thread, while the game is stalled
+                // too. The game still gets the notice, in order.
+                send.send_over_budget(Event::Reconfiguring)
+                    .map_err(|refused| refusal(refused, lang))?;
                 let registries = configure(
                     reader,
                     shared_writer,
@@ -1233,8 +1270,9 @@ fn receive_play(
                     cookies,
                     resources,
                     payloads,
+                    false,
                 )?;
-                let _ = send.send(Event::Reconfigured(Arc::new(registries)));
+                deliver(send, lang, Event::Reconfigured(Arc::new(registries)))?;
             }
             // ClientCommonPacketListenerImpl.handleRequestCookie: the stored
             // cookie (or none) goes straight back.
@@ -1281,18 +1319,39 @@ fn receive_play(
                     payload,
                     send,
                 )? {
-                    send.send(Event::Packet(Box::new(play::Clientbound::CustomPayload(
-                        payload,
-                    ))))
-                    .map_err(|_| Reason::plain("Disconnected"))?;
+                    deliver(
+                        send,
+                        lang,
+                        Event::Packet(Box::new(play::Clientbound::CustomPayload(payload))),
+                    )?;
                 }
             }
-            other => {
-                if send.send(Event::Packet(Box::new(other))).is_err() {
-                    return Ok(Reason::plain("Disconnected"));
-                }
-            }
+            other => deliver(send, lang, Event::Packet(Box::new(other)))?,
         }
+    }
+}
+
+/// Hands the game an event it must not lose (a packet, a registry snapshot). While its
+/// incoming queue is full this waits, so the connection stops being read and the
+/// server's flow control holds it back: a game that stalls (a shader pack compiling)
+/// while a world's first view streams in no longer ends the connection (#18380).
+/// Events main already dropped under pressure keep `send`, so keepalives are still
+/// answered behind them.
+fn deliver(send: &ingress::Producer<Event>, lang: &Language, event: Event) -> Result<(), Reason> {
+    send.send_waiting(event)
+        .map_err(|refused| refusal(refused, lang))
+}
+
+/// Why an event the game must get was refused. One larger than the whole incoming queue
+/// is keyed, so auto-reconnect never retries it: the next attempt would hit it again.
+fn refusal(refused: ingress::Refused<Event>, lang: &Language) -> Reason {
+    match refused.reason {
+        ingress::Refusal::Pressure => Reason::keyed_arg(
+            "horizon.multiplayer.incoming_too_large",
+            lang,
+            &refused.value.ingress_charge().to_string(),
+        ),
+        ingress::Refusal::Closed => Reason::plain("Disconnected"),
     }
 }
 
@@ -1302,9 +1361,32 @@ fn receive_application(
     payload: cfg::CustomPayload,
     send: &ingress::Producer<Event>,
 ) -> Result<Option<cfg::CustomPayload>, Reason> {
-    match crate::raw_payloads::Incoming::classify(endpoint.transport(), phase, payload)
-        .map_err(|error| Reason::plain(error.to_string()))?
-    {
+    let classified =
+        match crate::raw_payloads::Incoming::classify(endpoint.transport(), phase, payload) {
+            Ok(classified) => classified,
+            // A Horizon server from before the negotiation may still send on a channel this
+            // side declares (attachment sync goes to every Horizon-branded client): skip it,
+            // since nothing was negotiated to read it with.
+            Err(failure) => {
+                let silent = endpoint
+                    .transport()
+                    .epoch()
+                    .filter(|epoch| epoch.peer.silent());
+                match (silent, &failure.error) {
+                    (Some(epoch), mod_api::PayloadSendError::UnsupportedPeer(_)) => {
+                        if epoch.peer.first_skip() {
+                            log::info!(
+                                "Skipping {}: the server did not negotiate it",
+                                failure.id.0
+                            );
+                        }
+                        return Ok(None);
+                    }
+                    _ => return Err(Reason::plain(failure.to_string())),
+                }
+            }
+        };
+    match classified {
         crate::raw_payloads::Classified::Other(payload) => Ok(Some(payload)),
         crate::raw_payloads::Classified::Application(incoming) => {
             crate::raw_payloads::dispatch(
@@ -1330,6 +1412,8 @@ fn configure(
     cookies: &Cookies,
     resources: &ItemData,
     payloads: &Arc<crate::raw_payloads::Transport>,
+    // The connection's first configuration, not a reconfiguration from play.
+    initial: bool,
 ) -> Result<Dynamic, Reason> {
     let mut registries = Dynamic::default();
     let mut content_verified = false;
@@ -1346,17 +1430,38 @@ fn configure(
             None => Err(Reason::plain("Disconnected")),
         }
     };
-    // With only engine declarations the client waits for the server's query, so a vanilla
-    // server is sent nothing new.
-    if payloads.local.has_mod_declarations()
-        && let Some(control) = negotiation.initial()
-    {
+    // The server's build, once it names it (crate::build_mismatch), and whether this end
+    // named its own: both only in the first configuration.
+    let mut server_build = None::<String>;
+    let mut build_sent = !initial;
+    // A message on horizon:payloads, after this build's name the first time.
+    let send_control = |control: horizon_protocol::payload_negotiation::Control,
+                        build_sent: &mut bool|
+     -> Result<(), Reason> {
+        if !std::mem::replace(build_sent, true) {
+            reply(cfg::Serverbound::CustomPayload(cfg::CustomPayload {
+                channel: crate::build_mismatch::CHANNEL.into(),
+                data: crate::build_mismatch::encode(&crate::build_mismatch::this_build()),
+            }))?;
+        }
         reply(cfg::Serverbound::CustomPayload(cfg::CustomPayload {
             channel: horizon_protocol::payload_negotiation::CHANNEL.into(),
             data: control
                 .encode()
                 .map_err(|error| Reason::plain(error.to_string()))?,
-        }))?;
+        }))
+    };
+    // A failed negotiation names both builds when they differ.
+    let refused = |error: horizon_protocol::payload_negotiation::Error,
+                   server_build: &Option<String>| {
+        negotiation_refused(initial, server_build.as_deref(), &error.to_string())
+    };
+    // With only engine declarations the client waits for the server's query, so a vanilla
+    // server is sent nothing new.
+    if payloads.local.has_mod_declarations()
+        && let Some(control) = negotiation.initial()
+    {
+        send_control(control, &mut build_sent)?;
     }
     loop {
         let (id, payload) = reader
@@ -1366,21 +1471,19 @@ fn configure(
             .map_err(|e| Reason::plain(connection_lost(e, lang)))?
         {
             cfg::Clientbound::KeepAlive(k) => reply(cfg::Serverbound::KeepAlive(k))?,
+            cfg::Clientbound::CustomPayload(p) if p.channel == crate::build_mismatch::CHANNEL => {
+                server_build = crate::build_mismatch::decode(&p.data);
+            }
             cfg::Clientbound::CustomPayload(p)
                 if p.channel == horizon_protocol::payload_negotiation::CHANNEL =>
             {
                 let control = horizon_protocol::payload_negotiation::Control::decode(&p.data)
-                    .map_err(|error| Reason::plain(error.to_string()))?;
+                    .map_err(|error| refused(error, &server_build))?;
                 if let Some(control) = negotiation
                     .receive(control)
-                    .map_err(|error| Reason::plain(error.to_string()))?
+                    .map_err(|error| refused(error, &server_build))?
                 {
-                    reply(cfg::Serverbound::CustomPayload(cfg::CustomPayload {
-                        channel: horizon_protocol::payload_negotiation::CHANNEL.into(),
-                        data: control
-                            .encode()
-                            .map_err(|error| Reason::plain(error.to_string()))?,
-                    }))?;
+                    send_control(control, &mut build_sent)?;
                 }
                 if let Some(accepted) = negotiation.accepted() {
                     payloads.accept(accepted).map_err(Reason::plain)?;
@@ -1436,12 +1539,7 @@ fn configure(
                         == Some("horizon")
                 {
                     if let Some(control) = negotiation.require_protocol() {
-                        reply(cfg::Serverbound::CustomPayload(cfg::CustomPayload {
-                            channel: horizon_protocol::payload_negotiation::CHANNEL.into(),
-                            data: control
-                                .encode()
-                                .map_err(|error| Reason::plain(error.to_string()))?,
-                        }))?;
+                        send_control(control, &mut build_sent)?;
                     }
                     let mut w = horizon_protocol::buf::Writer::new();
                     w.string("horizon");
@@ -1520,17 +1618,31 @@ fn configure(
             }
             cfg::Clientbound::Disconnect(d) => return Err(Reason::tag(&d.reason, lang)),
             cfg::Clientbound::FinishConfiguration(_) => {
-                negotiation
-                    .finish_without_offer()
-                    .map_err(|error| Reason::plain(error.to_string()))?;
+                // A Horizon server that never sent on horizon:payloads predates the
+                // negotiation: play on with nothing negotiated, as on a vanilla server.
+                // Only on the first configuration: a server that goes silent when it
+                // reconfigures is refused as before.
+                let silent = if initial {
+                    negotiation.finish_allowing_silent_peer()
+                } else {
+                    negotiation.finish_without_offer().map(|()| false)
+                }
+                .map_err(|error| refused(error, &server_build))?;
+                if silent {
+                    log::info!(
+                        "The server did not answer horizon:payloads: Horizon's negotiated extensions are off"
+                    );
+                }
                 if payloads.epoch().is_none() {
-                    payloads
-                        .accept(
-                            negotiation
-                                .accepted()
-                                .expect("configuration barrier freezes negotiation"),
-                        )
-                        .map_err(Reason::plain)?;
+                    let accepted = negotiation
+                        .accepted()
+                        .expect("configuration barrier freezes negotiation");
+                    if silent {
+                        payloads.accept_from_silent_server(accepted)
+                    } else {
+                        payloads.accept(accepted)
+                    }
+                    .map_err(Reason::plain)?;
                 }
                 crate::datapack_net::finish_transfer().map_err(Reason::plain)?;
                 registries.custom_components = content_verified;
@@ -1551,6 +1663,23 @@ fn configure(
             }
             _ => {}
         }
+    }
+}
+
+/// A failed `horizon:payloads` negotiation. In the first configuration it names the server's
+/// build (`None`: one from before builds were named, so older) and this one, unless they are the
+/// same; a reconfiguration keeps the negotiation's own error.
+fn negotiation_refused(initial: bool, server_build: Option<&str>, error: &str) -> Reason {
+    let this = crate::build_mismatch::this_build();
+    match initial
+        .then(|| crate::build_mismatch::refusal(server_build, Some(&this), error))
+        .flatten()
+    {
+        Some(text) => Reason {
+            text: text.plain(),
+            key: Some(crate::build_mismatch::KEY.to_owned()),
+        },
+        None => Reason::plain(error),
     }
 }
 
@@ -1578,62 +1707,102 @@ fn brand() -> Vec<u8> {
     w.data
 }
 
+/// Returns whether `v` is a recognisable JSON chat component (as opposed to an
+/// arbitrary unknown JSON payload like `{"custom": ...}` or `null`).
+fn is_json_component(v: &serde_json::Value, depth: usize) -> bool {
+    if depth > 32 {
+        return false;
+    }
+    match v {
+        serde_json::Value::String(_)
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_) => true,
+        serde_json::Value::Array(a) => {
+            !a.is_empty() && a.iter().all(|e| is_json_component(e, depth + 1))
+        }
+        serde_json::Value::Object(o) => [
+            "text",
+            "translate",
+            "keybind",
+            "selector",
+            "score",
+            "nbt",
+            "object",
+            "extra",
+        ]
+        .iter()
+        .any(|k| o.contains_key(*k)),
+        serde_json::Value::Null => false,
+    }
+}
+
 /// Flatten a JSON chat component (login disconnects are JSON).
 /// At most `horizon_protocol::text::MAX_TEXT` bytes, as `plain`: a login-phase reason from a
 /// server is any JSON it likes.
 pub fn json_text(v: &serde_json::Value, lang: &Language) -> String {
+    let mut out = String::new();
+    append_json_text(v, lang, &mut out, 0);
+    out
+}
+
+fn append_json_text(v: &serde_json::Value, lang: &Language, out: &mut String, depth: usize) {
     use horizon_protocol::text::{MAX_TEXT, push_capped};
+    if depth > 32 || out.len() >= MAX_TEXT {
+        return;
+    }
     match v {
-        serde_json::Value::String(s) => {
-            let mut out = String::new();
-            push_capped(&mut out, s);
-            out
-        }
+        serde_json::Value::String(s) => push_capped(out, s),
+        serde_json::Value::Bool(b) => push_capped(out, if *b { "true" } else { "false" }),
+        serde_json::Value::Number(n) => push_capped(out, &n.to_string()),
+        serde_json::Value::Null => {}
         serde_json::Value::Array(a) => {
-            let mut out = String::new();
             for e in a {
                 if out.len() >= MAX_TEXT {
                     break;
                 }
-                push_capped(&mut out, &json_text(e, lang));
+                append_json_text(e, lang, out, depth + 1);
             }
-            out
         }
         serde_json::Value::Object(o) => {
-            let mut out = if let Some(t) = o.get("text").and_then(|t| t.as_str()) {
-                let mut out = String::new();
-                push_capped(&mut out, t);
-                out
-            } else if let Some(key) = o.get("translate").and_then(|t| t.as_str()) {
+            if let Some(t) = o.get("text").and_then(serde_json::Value::as_str) {
+                push_capped(out, t);
+            } else if let Some(key) = o.get("translate").and_then(serde_json::Value::as_str) {
                 let args: Vec<String> = o
                     .get("with")
-                    .and_then(|w| w.as_array())
-                    .map(|a| a.iter().map(|e| json_text(e, lang)).collect())
+                    .and_then(serde_json::Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .map(|e| {
+                                let mut s = String::new();
+                                append_json_text(e, lang, &mut s, depth + 1);
+                                s
+                            })
+                            .collect()
+                    })
                     .unwrap_or_default();
                 let pattern = lang
                     .get(key)
                     .cloned()
                     .or_else(|| {
                         o.get("fallback")
-                            .and_then(|f| f.as_str())
+                            .and_then(serde_json::Value::as_str)
                             .map(str::to_owned)
                     })
                     .unwrap_or_else(|| key.to_owned());
-                horizon_protocol::text::format_java(&pattern, &args)
-            } else {
-                String::new()
-            };
-            if let Some(extra) = o.get("extra").and_then(|e| e.as_array()) {
+                push_capped(out, &horizon_protocol::text::format_java(&pattern, &args));
+            } else if let Some(key) = o.get("keybind").and_then(serde_json::Value::as_str) {
+                push_capped(out, lang.get(key).map_or(key, String::as_str));
+            }
+            // Vanilla leaves unresolved `selector` and `score` contents empty on the client.
+            if let Some(extra) = o.get("extra").and_then(serde_json::Value::as_array) {
                 for e in extra {
                     if out.len() >= MAX_TEXT {
                         break;
                     }
-                    push_capped(&mut out, &json_text(e, lang));
+                    append_json_text(e, lang, out, depth + 1);
                 }
             }
-            out
         }
-        other => other.to_string(),
     }
 }
 
@@ -1781,6 +1950,14 @@ fn continues_after_failed_join(lan: bool, signed_in: bool) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn older_servers_are_on_unless_the_variable_is_zero() {
+        use std::ffi::OsStr;
+        assert!(super::older_servers_setting(None));
+        assert!(super::older_servers_setting(Some(OsStr::new("1"))));
+        assert!(!super::older_servers_setting(Some(OsStr::new("0"))));
+    }
+
     use super::*;
     use horizon_world::native_load_context::DataLoadOrigin;
 
@@ -1793,65 +1970,248 @@ mod tests {
         (root, data)
     }
 
-    #[test]
-    fn horizon_server_without_raw_protocol_is_refused_at_finish() {
-        for wrong_version in [false, true] {
-            let (root, data) = empty_item_data("raw-protocol-refusal");
-            let (client, server) = horizon_protocol::connection::Pipe::pair();
-            let (mut reader, writer) = Connection::local(client).split();
-            reader
-                .set_read_timeout(Some(Duration::from_secs(10)))
-                .unwrap();
-            let thread = std::thread::spawn(move || {
-                let (send, _events) = event_channel();
+    /// A Horizon-branded server's configuration: the brand, then `negotiation` on
+    /// `horizon:payloads`, then FinishConfiguration. Returns the client's result, its
+    /// transport (with the engine's declarations) and the pieces to receive play payloads.
+    fn configure_with_horizon_server(
+        name: &str,
+        negotiation: &[Vec<u8>],
+    ) -> (
+        Result<Dynamic, Reason>,
+        crate::raw_payloads::Endpoint,
+        ingress::Producer<Event>,
+    ) {
+        let payloads =
+            crate::raw_payloads::Transport::capture(crate::raw_payloads::Side::Client).unwrap();
+        configure_on(name, &payloads, true, negotiation)
+    }
+
+    /// One configuration pass of `payloads`' connection: `initial` for the first, else a
+    /// reconfiguration from play.
+    fn configure_on(
+        name: &str,
+        payloads: &Arc<crate::raw_payloads::Transport>,
+        initial: bool,
+        negotiation: &[Vec<u8>],
+    ) -> (
+        Result<Dynamic, Reason>,
+        crate::raw_payloads::Endpoint,
+        ingress::Producer<Event>,
+    ) {
+        configure_announced(name, payloads, initial, None, negotiation)
+    }
+
+    /// [`configure_on`] with a server that names its `build` before negotiating, as one
+    /// does since crate::build_mismatch.
+    fn configure_announced(
+        name: &str,
+        payloads: &Arc<crate::raw_payloads::Transport>,
+        initial: bool,
+        build: Option<&str>,
+        negotiation: &[Vec<u8>],
+    ) -> (
+        Result<Dynamic, Reason>,
+        crate::raw_payloads::Endpoint,
+        ingress::Producer<Event>,
+    ) {
+        let (root, data) = empty_item_data(name);
+        let (client, server) = horizon_protocol::connection::Pipe::pair();
+        let (mut reader, writer) = Connection::local(client).split();
+        reader
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let writer = Arc::new(Mutex::new(Some(QueuedWriter::new(writer).unwrap())));
+        let configuring = Arc::new(AtomicBool::new(true));
+        let payloads = payloads.clone();
+        let (send, _events) = event_channel();
+        let thread = std::thread::spawn({
+            let (writer, configuring, payloads, send) = (
+                writer.clone(),
+                configuring.clone(),
+                payloads.clone(),
+                send.clone(),
+            );
+            move || {
                 configure(
                     &mut reader,
-                    &Arc::new(Mutex::new(Some(QueuedWriter::new(writer).unwrap()))),
-                    &Arc::new(AtomicBool::new(true)),
+                    &writer,
+                    &configuring,
                     &Language::new(),
                     &send,
                     &Cookies::default(),
                     &data,
-                    &crate::raw_payloads::Transport::empty(),
+                    &payloads,
+                    initial,
                 )
-            });
-            let mut server = Connection::local(server);
-            let mut brand = horizon_protocol::buf::Writer::new();
-            brand.string("horizon");
-            server
-                .send(
-                    &cfg::Clientbound::CustomPayload(cfg::CustomPayload {
-                        channel: "minecraft:brand".into(),
-                        data: brand.data,
-                    })
-                    .encode(),
-                )
-                .unwrap();
-            if wrong_version {
-                server
-                    .send(
-                        &cfg::Clientbound::CustomPayload(cfg::CustomPayload {
-                            channel: horizon_protocol::payload_negotiation::CHANNEL.into(),
-                            data: vec![0, horizon_protocol::payload_negotiation::RAW_PROTOCOL + 1],
-                        })
-                        .encode(),
-                    )
-                    .unwrap();
-            } else {
-                server
-                    .send(&cfg::Clientbound::FinishConfiguration(Empty).encode())
-                    .unwrap();
             }
-            let Err(error) = thread.join().unwrap() else {
-                panic!("old Horizon server admitted");
-            };
-            assert!(error.text.contains(if wrong_version {
-                "protocol version"
-            } else {
-                "missing response"
-            }));
-            std::fs::remove_dir_all(root).unwrap();
+        });
+        let mut server = Connection::local(server);
+        let mut brand = horizon_protocol::buf::Writer::new();
+        brand.string("horizon");
+        let custom = |channel: &str, data: Vec<u8>| {
+            cfg::Clientbound::CustomPayload(cfg::CustomPayload {
+                channel: channel.into(),
+                data,
+            })
+            .encode()
+        };
+        server.send(&custom("minecraft:brand", brand.data)).unwrap();
+        if let Some(build) = build {
+            server
+                .send(&custom(
+                    crate::build_mismatch::CHANNEL,
+                    crate::build_mismatch::encode(build),
+                ))
+                .unwrap();
         }
+        // The client may already have refused and hung up: later sends can fail.
+        for control in negotiation {
+            let _ = server.send(&custom(
+                horizon_protocol::payload_negotiation::CHANNEL,
+                control.clone(),
+            ));
+        }
+        let _ = server.send(&cfg::Clientbound::FinishConfiguration(Empty).encode());
+        let result = thread.join().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+        let endpoint =
+            crate::raw_payloads::Endpoint::client(writer, configuring, payloads, send.clone());
+        (result, endpoint, send)
+    }
+
+    fn attachment_sync() -> cfg::CustomPayload {
+        cfg::CustomPayload {
+            channel: horizon_protocol::attachment_sync::CHANNEL.into(),
+            data: vec![0],
+        }
+    }
+
+    /// #17892: a Horizon server from before the negotiation never sends on horizon:payloads.
+    #[test]
+    fn a_horizon_server_that_never_negotiates_is_joined_with_nothing_negotiated() {
+        let (result, endpoint, send) = configure_with_horizon_server("raw-protocol-silent", &[]);
+        if let Err(error) = result {
+            panic!("older Horizon server refused: {}", error.text);
+        }
+        let epoch = endpoint.transport().epoch().unwrap();
+        assert!(epoch.peer.silent());
+        // Attachment sync is clientbound: this client must not receive it.
+        assert!(!epoch.peer.engine_receives(
+            horizon_protocol::payload_negotiation::Phase::Play,
+            horizon_protocol::attachment_sync::CHANNEL
+        ));
+        // Such a server still sends attachment sync to Horizon-branded clients: skipped.
+        for _ in 0..2 {
+            assert!(matches!(
+                receive_application(
+                    &endpoint,
+                    horizon_protocol::payload_negotiation::Phase::Play,
+                    attachment_sync(),
+                    &send,
+                ),
+                Ok(None)
+            ));
+        }
+    }
+
+    /// The fallback is for the first configuration only: a negotiated connection whose
+    /// server sends the brand again on reconfiguration and then nothing is refused.
+    #[test]
+    fn a_negotiated_connection_that_reconfigures_silently_is_refused() {
+        use horizon_protocol::payload_negotiation::{Control, Manifest};
+        let payloads =
+            crate::raw_payloads::Transport::capture(crate::raw_payloads::Side::Client).unwrap();
+        let (result, ..) = configure_on(
+            "raw-protocol-reconfigure-first",
+            &payloads,
+            true,
+            &[Control::Offer(Manifest::default()).encode().unwrap()],
+        );
+        if let Err(error) = result {
+            panic!("current Horizon server refused: {}", error.text);
+        }
+        let (result, ..) = configure_on("raw-protocol-reconfigure-silent", &payloads, false, &[]);
+        assert!(result.err().unwrap().text.contains("missing response"));
+    }
+
+    /// A Horizon server of another build that can't negotiate: the refusal names both builds, and
+    /// one that never named its build is older. Never retried.
+    #[test]
+    fn a_failed_negotiation_names_both_builds() {
+        use horizon_protocol::payload_negotiation::RAW_PROTOCOL;
+        let this = crate::build_mismatch::this_build();
+        for (server, shown) in [
+            (
+                Some("Nightly 2000-01-01 · 0000000"),
+                "Horizon Nightly 2000-01-01 · 0000000",
+            ),
+            (None, "an older Horizon build"),
+        ] {
+            let payloads =
+                crate::raw_payloads::Transport::capture(crate::raw_payloads::Side::Client).unwrap();
+            let (result, ..) = configure_announced(
+                "build-mismatch",
+                &payloads,
+                true,
+                server,
+                &[vec![0, RAW_PROTOCOL + 1]],
+            );
+            let error = result.err().unwrap();
+            assert!(
+                error.text.starts_with(&format!(
+                    "This server runs {shown}; your game is Horizon {this}."
+                )),
+                "{}",
+                error.text
+            );
+            if server.is_none() {
+                assert!(
+                    error
+                        .text
+                        .contains("The server needs updating to match your game.")
+                );
+            }
+            assert!(error.text.contains("protocol version"));
+            assert!(!crate::reconnect::allowed(
+                &error.text,
+                error.key.as_deref(),
+                false
+            ));
+        }
+    }
+
+    #[test]
+    fn a_horizon_server_that_answers_keeps_every_check() {
+        use horizon_protocol::payload_negotiation::{Control, Manifest, RAW_PROTOCOL};
+        let (result, ..) = configure_with_horizon_server(
+            "raw-protocol-wrong-version",
+            &[vec![0, RAW_PROTOCOL + 1]],
+        );
+        assert!(result.err().unwrap().text.contains("protocol version"));
+        // A Query without its Offer is an answer that never finished.
+        let (result, ..) = configure_with_horizon_server(
+            "raw-protocol-query-only",
+            &[Control::Query.encode().unwrap()],
+        );
+        assert!(result.err().unwrap().text.contains("missing response"));
+        // A server that offered without attachment sync and sends it anyway is refused.
+        let (result, endpoint, send) = configure_with_horizon_server(
+            "raw-protocol-answered",
+            &[Control::Offer(Manifest::default()).encode().unwrap()],
+        );
+        if let Err(error) = result {
+            panic!("current Horizon server refused: {}", error.text);
+        }
+        assert!(!endpoint.transport().epoch().unwrap().peer.silent());
+        let Err(error) = receive_application(
+            &endpoint,
+            horizon_protocol::payload_negotiation::Phase::Play,
+            attachment_sync(),
+            &send,
+        ) else {
+            panic!("unnegotiated payload admitted from a server that answered");
+        };
+        assert!(error.text.contains("UnsupportedPeer"));
     }
 
     #[test]
@@ -1879,6 +2239,7 @@ mod tests {
                     &Cookies::default(),
                     &data,
                     &crate::raw_payloads::Transport::empty(),
+                    true,
                 )
             });
             let mut server = Connection::local(server);
@@ -1997,6 +2358,77 @@ mod tests {
         assert!(text.len() <= horizon_protocol::text::MAX_TEXT);
     }
 
+    #[test]
+    fn login_reason_joins_empty_root_text_with_nested_extra() {
+        let raw = r#"{"text":"","extra":[{"text":"Server "},{"text":"restarting","extra":[{"text":"!"}]}]}"#;
+        let reason = Reason::component(raw, &Language::default());
+        assert_eq!(reason.text, "Server restarting!");
+        assert_eq!(reason.key, None);
+    }
+
+    #[test]
+    fn login_reason_supports_keybind_and_leaves_unresolved_selector_score_and_null_empty() {
+        let mut lang = Language::default();
+        lang.insert("key.jump".into(), "Space".into());
+        let v = serde_json::json!({
+            "text": "",
+            "extra": [
+                { "keybind": "key.jump" },
+                " ",
+                { "selector": "@p" },
+                { "score": { "name": "Alex" } },
+                null
+            ]
+        });
+        assert_eq!(json_text(&v, &lang), "Space ");
+    }
+
+    #[test]
+    fn login_reason_valid_empty_components_stay_blank() {
+        assert_eq!(Reason::component(r#""""#, &Language::default()).text, "");
+        assert_eq!(
+            Reason::component(r#"{"text":""}"#, &Language::default()).text,
+            ""
+        );
+        assert_eq!(
+            Reason::component(r#"{"selector":"@p"}"#, &Language::default()).text,
+            ""
+        );
+        assert_eq!(
+            Reason::component(r#"{"score":{"name":"Alex"}}"#, &Language::default()).text,
+            ""
+        );
+    }
+
+    #[test]
+    fn login_reason_array_component_preserves_translate_key() {
+        let mut lang = Language::default();
+        lang.insert(
+            "multiplayer.disconnect.kicked".into(),
+            "Kicked by an operator".into(),
+        );
+        let raw = r#"[{"translate":"multiplayer.disconnect.kicked"},{"text":": Maintenance"}]"#;
+        let reason = Reason::component(raw, &lang);
+        assert_eq!(reason.text, "Kicked by an operator: Maintenance");
+        assert_eq!(reason.key.as_deref(), Some("multiplayer.disconnect.kicked"));
+    }
+
+    #[test]
+    fn login_reason_deeply_nested_extra_stops_at_depth_limit() {
+        let mut v = serde_json::json!({ "text": "deep" });
+        for _ in 0..40 {
+            v = serde_json::json!({ "text": "", "extra": [v] });
+        }
+        assert_eq!(json_text(&v, &Language::default()), "");
+    }
+
+    #[test]
+    fn login_reason_empty_unknown_object_falls_back_to_raw_json() {
+        let raw = r#"{"custom":"unexpected_kick_payload"}"#;
+        let reason = Reason::component(raw, &Language::default());
+        assert_eq!(reason.text, raw);
+    }
+
     fn pack(namespace: &str, id: &str, version: &str) -> cfg::KnownPack {
         cfg::KnownPack {
             namespace: namespace.into(),
@@ -2109,6 +2541,20 @@ mod tests {
                 Arc::clone(&data),
             );
             let (stream, _) = listener.accept().unwrap();
+            // Older-server detection pings the address on a second connection before the login
+            // handshake goes out; dropping that one leaves the release unknown, so this one
+            // (the login) is the one under test. With detection off no second one arrives.
+            listener.set_nonblocking(true).unwrap();
+            let waited = std::time::Instant::now();
+            while waited.elapsed() < Duration::from_secs(2) {
+                match listener.accept() {
+                    Ok(_) => break,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                    Err(e) => panic!("accept: {e}"),
+                }
+            }
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
@@ -2374,6 +2820,7 @@ mod tests {
                 &Cookies::default(),
                 &data,
                 &crate::raw_payloads::Transport::empty(),
+                true,
             )
         });
         let mut server = Connection::local(server);
@@ -2421,6 +2868,7 @@ mod tests {
                 &Cookies::default(),
                 &data,
                 &crate::raw_payloads::Transport::empty(),
+                true,
             )
         });
         let mut server = Connection::local(server);
@@ -2484,6 +2932,7 @@ mod tests {
                 &Cookies::default(),
                 &data,
                 &crate::raw_payloads::Transport::empty(),
+                true,
             )
         });
         let mut server = Connection::local(server);
@@ -2645,6 +3094,229 @@ mod tests {
         writer.lock().unwrap().take().unwrap().shutdown();
         assert!(thread.join().unwrap().is_err());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// #18380: the play loop over a pipe, handing its packets to an incoming queue.
+    struct PlayLoop {
+        events: ingress::Consumer<Event>,
+        /// The server's end, which gives up on a read after [`WAIT`].
+        server: Connection,
+        writer: Arc<Mutex<Option<QueuedWriter>>>,
+        configuring: Arc<AtomicBool>,
+        /// How the loop ended, once it has.
+        ended: std::sync::mpsc::Receiver<Result<Reason, Reason>>,
+        /// What `configuring` read on this loop's thread each time a reconfiguration's
+        /// acknowledgement was about to be queued.
+        phase_at_acknowledgement: std::sync::mpsc::Receiver<bool>,
+        root: PathBuf,
+    }
+
+    /// How long a test waits for anything, so a missed wakeup fails instead of hanging.
+    const WAIT: Duration = Duration::from_secs(5);
+
+    impl PlayLoop {
+        fn start(name: &str, budget: usize) -> Self {
+            let (root, data) = empty_item_data(name);
+            let (client, server) = horizon_protocol::connection::Pipe::pair();
+            let (mut reader, writer) = Connection::local(client).split();
+            let writer = Arc::new(Mutex::new(Some(QueuedWriter::new(writer).unwrap())));
+            let configuring = Arc::new(AtomicBool::new(false));
+            let (send, events) = ingress::channel(budget, Event::ingress_charge).unwrap();
+            let (thread_writer, thread_configuring) = (writer.clone(), configuring.clone());
+            let (done, ended) = channel();
+            let (probe, phase_at_acknowledgement) = channel();
+            std::thread::spawn(move || {
+                PHASE_PROBE.set(Some(probe));
+                let _ = done.send(receive_play(
+                    &mut reader,
+                    &thread_writer,
+                    &thread_configuring,
+                    &Language::new(),
+                    &send,
+                    &Cookies::default(),
+                    &crate::lod_net::Inbox::default(),
+                    &data,
+                    &Arc::new(Mutex::new(None)),
+                    &crate::raw_payloads::Transport::empty(),
+                ));
+            });
+            let server = Connection::local(server);
+            server.reader.set_read_timeout(Some(WAIT)).unwrap();
+            Self {
+                events,
+                server,
+                writer,
+                configuring,
+                ended,
+                phase_at_acknowledgement,
+                root,
+            }
+        }
+        fn send(&mut self, packet: play::Clientbound) {
+            self.server.send(&packet.encode()).unwrap();
+        }
+        fn reply(&mut self) -> play::Serverbound {
+            let (id, body) = self.server.recv().expect("no reply in time");
+            play::Serverbound::decode(id, &body).unwrap()
+        }
+        fn configuration_reply(&mut self) -> cfg::Serverbound {
+            let (id, body) = self.server.recv().expect("no reply in time");
+            cfg::Serverbound::decode(id, &body).unwrap()
+        }
+        fn running(&self) -> bool {
+            matches!(
+                self.ended.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            )
+        }
+        /// The reason the loop ended with, as its text and key: `Ok` from the server,
+        /// `Err` from this side.
+        fn end(self) -> Result<(String, Option<String>), (String, Option<String>)> {
+            let ended = self.ended.recv_timeout(WAIT).expect("the loop never ended");
+            std::fs::remove_dir_all(&self.root).unwrap();
+            let parts = |reason: Reason| (reason.text, reason.key);
+            ended.map(parts).map_err(parts)
+        }
+        fn shut(self) -> Result<(String, Option<String>), (String, Option<String>)> {
+            if let Some(writer) = self.writer.lock().unwrap().take() {
+                writer.shutdown();
+            }
+            self.end()
+        }
+    }
+
+    thread_local! {
+        /// Set only on a [`PlayLoop`]'s own thread: where it hears what `configuring`
+        /// read as a reconfiguration's acknowledgement was about to be queued.
+        static PHASE_PROBE: std::cell::RefCell<Option<std::sync::mpsc::Sender<bool>>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    /// Called under the writer lock, right before the acknowledgement is queued.
+    pub(super) fn observe_phase_at_acknowledgement(configuring: &AtomicBool) {
+        PHASE_PROBE.with_borrow(|probe| {
+            if let Some(probe) = probe {
+                let _ = probe.send(configuring.load(Ordering::Acquire));
+            }
+        });
+    }
+
+    fn ping(id: i32) -> play::Clientbound {
+        play::Clientbound::Ping(cfg::Ping { id })
+    }
+
+    fn keepalive(id: i64) -> play::Clientbound {
+        play::Clientbound::KeepAlive(cfg::KeepAlive { id })
+    }
+
+    /// The bytes one queued ping holds in the incoming queue.
+    fn ping_charge() -> usize {
+        Event::Packet(Box::new(ping(0))).ingress_charge()
+            + horizon_mod_runtime::byte_channel::message_overhead::<Event>()
+    }
+
+    /// #18380: a game that stalls (a shader pack compiling) while a world's first view
+    /// streams in fills its incoming queue. The connection waits for it instead of ending.
+    #[test]
+    fn a_full_incoming_queue_waits_for_a_slow_game_instead_of_disconnecting() {
+        let mut play = PlayLoop::start("ingress-stall", 2 * ping_charge());
+        for id in 0..20 {
+            play.send(ping(id));
+        }
+        for id in 0..20 {
+            let (event, credit) = play.events.recv_timeout_owned(WAIT).unwrap().into_parts();
+            assert!(matches!(event, Event::Packet(p) if *p == ping(id)));
+            // The game holds each packet's charge for a while, as its backlog does.
+            std::thread::sleep(Duration::from_millis(10));
+            drop(credit);
+        }
+        play.send(keepalive(9));
+        assert_eq!(
+            play.reply(),
+            play::Serverbound::KeepAlive(cfg::KeepAlive { id: 9 })
+        );
+        assert!(play.running());
+        assert!(play.shut().is_err());
+    }
+
+    /// #18380: what main dropped under pressure (a pack pop) is still dropped, not waited
+    /// for, so keepalives behind it are answered while the game is stalled.
+    #[test]
+    fn a_full_queue_still_answers_keepalives_behind_a_best_effort_event() {
+        let mut play = PlayLoop::start("ingress-best-effort", ping_charge());
+        play.send(ping(1));
+        play.send(play::Clientbound::ResourcePackPop(cfg::ResourcePackPop {
+            id: None,
+        }));
+        play.send(keepalive(9));
+        assert_eq!(
+            play.reply(),
+            play::Serverbound::KeepAlive(cfg::KeepAlive { id: 9 })
+        );
+        assert!(play.running());
+        assert!(play.shut().is_err());
+    }
+
+    /// #18380: a reconfiguration turns the game's answers to configuration only once the
+    /// acknowledgement is queued, or an answer to a play packet the game still holds
+    /// reaches a server that reads it as play. And a stalled game doesn't hold up
+    /// configuration: its keepalives are answered while the queue is still full.
+    #[test]
+    fn a_reconfiguration_is_acknowledged_first_and_answered_while_the_game_stalls() {
+        let mut play = PlayLoop::start("ingress-reconfigure", ping_charge());
+        play.send(ping(1));
+        play.send(play::Clientbound::StartConfiguration(Empty));
+        assert_eq!(
+            play.reply(),
+            play::Serverbound::ConfigurationAcknowledged(Empty)
+        );
+        // The acknowledgement is on the wire, so the probe before it has reported.
+        let seen: Vec<bool> = play.phase_at_acknowledgement.try_iter().collect();
+        assert_eq!(
+            seen,
+            [false],
+            "configuring turned before the acknowledgement"
+        );
+        assert!(play.configuring.load(Ordering::Acquire));
+        play.server
+            .send(&cfg::Clientbound::KeepAlive(cfg::KeepAlive { id: 5 }).encode())
+            .unwrap();
+        assert_eq!(
+            play.configuration_reply(),
+            cfg::Serverbound::KeepAlive(cfg::KeepAlive { id: 5 })
+        );
+        assert!(play.running());
+        let (event, credit) = play.events.recv_timeout_owned(WAIT).unwrap().into_parts();
+        assert!(matches!(event, Event::Packet(p) if *p == ping(1)));
+        drop(credit);
+        let (event, _credit) = play.events.recv_timeout_owned(WAIT).unwrap().into_parts();
+        assert!(matches!(event, Event::Reconfiguring));
+        assert!(play.shut().is_err());
+    }
+
+    /// #18380: waiting for room ends when the game drops its end, and a packet that could
+    /// never fit is refused with that reason instead of a bare "Disconnected".
+    #[test]
+    fn a_waiting_connection_ends_on_a_closed_queue_or_a_packet_larger_than_it() {
+        let mut play = PlayLoop::start("ingress-closed", ping_charge());
+        play.send(ping(1));
+        play.send(ping(2));
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(play.running(), "the full queue ended the connection");
+        drop(std::mem::replace(&mut play.events, event_channel().1));
+        assert_eq!(play.end(), Err(("Disconnected".to_owned(), None)));
+
+        let mut play = PlayLoop::start("ingress-oversize", ping_charge() - 1);
+        play.send(ping(1));
+        let Err((text, key)) = play.end() else {
+            panic!("a packet larger than the queue was taken");
+        };
+        assert_eq!(
+            key.as_deref(),
+            Some("horizon.multiplayer.incoming_too_large")
+        );
+        // A permanent refusal: the next attempt would hit it again.
+        assert!(!crate::reconnect::allowed(&text, key.as_deref(), false));
     }
 
     #[test]
