@@ -192,7 +192,9 @@ fn enchant_reaches_a_mobs_main_hand() {
         &mut game,
         "enchant @e[type=minecraft:zombie,limit=1] minecraft:protection 1"
     ));
-    assert_eq!(shown.enchantments().len(), 1);
+    let after = game.mobs[0].equipment_stacks()[0].clone().unwrap();
+    assert_eq!(after, shown, "the refused enchantment leaves the live stack alone");
+    assert_eq!(after.enchantments().len(), 1);
     // A mob the game equipped from a loot table keeps only its slot's
     // enchantments (`getMainHandItem` builds the stack from them): an exclusive
     // one is still refused, and a compatible one joins them.
