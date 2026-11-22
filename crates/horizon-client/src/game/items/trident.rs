@@ -832,7 +832,7 @@ impl Game<'_> {
                             }
                         } else {
                             // ItemFrame.hurtServer: the item comes out, or the frame breaks.
-                            self.projectile_hurts_frame(id, cause, creative);
+                            self.projectile_hurts_frame_from(id, cause, creative);
                         }
                         // ThrownTrident.onHitEntity on another player.
                         if let Some(conn) = self.trident_guest_conn(id) {

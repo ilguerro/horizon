@@ -425,13 +425,7 @@ impl Game<'_> {
             self.attack_ticks = 0;
             return true;
         }
-        let with_frame = self.item_frames[i].item.is_none();
-        self.hit_frame(
-            i,
-            with_frame,
-            Some(super::commands::Target::Player),
-            self.creative,
-        );
+        self.hit_frame(i, true, self.creative);
         true
     }
     /// `ItemFrame.hurtServer` from a projectile (`AbstractArrow.onHitEntity`,
@@ -440,7 +434,19 @@ impl Game<'_> {
     /// gives way to a creative player's shot (`canHurtWhenFixed`), and then
     /// breaks whole (`BlockAttachedEntity.hurtServer`). `creative`: that player
     /// has infinite materials. False when the frame refused the hit.
+    #[allow(dead_code)] // The mod point's original signature; callers with a source use the `_from` form.
     pub(super) fn projectile_hurts_frame(
+        &mut self,
+        id: u32,
+        by_player: bool,
+        creative: bool,
+    ) -> bool {
+        let source = by_player.then_some(super::commands::Target::Player);
+        self.projectile_hurts_frame_from(id, source, creative)
+    }
+    /// `ItemFrame.hurtServer` from a projectile, with the damage source's entity:
+    /// `source` is that entity and `creative` says it has infinite materials.
+    pub(super) fn projectile_hurts_frame_from(
         &mut self,
         id: u32,
         source: Option<super::commands::Target>,
@@ -453,40 +459,52 @@ impl Game<'_> {
             if !creative {
                 return false;
             }
-            self.item_frames[i].item = None;
+            // `ItemFrame.dropItem` does nothing for a fixed frame: the item goes
+            // with the frame, so leave it in place for the break below.
+            return self.hit_frame_from(i, true, source, creative);
         }
         let with_frame = self.item_frames[i].item.is_none();
-        self.hit_frame(i, with_frame, source, creative);
-        true
+        self.hit_frame_from(i, with_frame, source, creative)
     }
     /// `ItemFrame.hurtServer`'s non-fixed part: a filled frame gives its item
     /// up (`shouldDamageDropItem`), an empty or exploded one breaks whole
-    /// (`BlockAttachedEntity.hurtServer`). `source`: the damage source's entity
-    /// (`DamageSource.getEntity`), which the death and block change events are
-    /// attributed to and which decides the drops (`Player.hasInfiniteMaterials`
-    /// when `creative`).
-    pub(super) fn hit_frame(
+    /// (`BlockAttachedEntity.hurtServer`). `by_player`: the damage source's
+    /// entity is the acting player, `creative` when they have infinite
+    /// materials (no drops).
+    fn hit_frame(&mut self, i: usize, by_player: bool, creative: bool) {
+        let with_frame = self.item_frames[i].item.is_none();
+        let source = by_player.then_some(super::commands::Target::Player);
+        self.hit_frame_from(i, with_frame, source, creative);
+    }
+    /// `hit_frame` with the damage source's entity: a filled frame gives its
+    /// item up, an empty or exploded one breaks whole. A fixed frame keeps its
+    /// item until the frame is removed. True when the frame took the hit.
+    pub(super) fn hit_frame_from(
         &mut self,
         mut i: usize,
         with_frame: bool,
         source: Option<super::commands::Target>,
         creative: bool,
-    ) {
+    ) -> bool {
         use super::commands::Target;
         let by_player = matches!(source, Some(Target::Player | Target::Guest(_)));
         let entity_id = self.item_frames[i].id;
         if with_frame {
+            let had_item = self.item_frames[i].item.is_some();
             let (kind, pos) = (self.item_frames[i].kind(), self.item_frames[i].pos);
             if self.hanging_break_cancelled(kind, pos, by_player) {
-                return;
+                return false;
             }
             // The hook had `&mut self`: find the frame again by id.
             let Some(now) = self.item_frames.iter().position(|f| f.id == entity_id) else {
-                return;
+                return false;
             };
             i = now;
-            if self.item_frames[i].item.is_some() {
-                return;
+            // A hook that filled an empty frame keeps it: only a frame that
+            // held its item when the hit came (a fixed frame or an explosion)
+            // breaks with it.
+            if self.item_frames[i].item.is_some() && !had_item {
+                return false;
             }
         }
         let old_item = self.item_frames[i]
@@ -508,8 +526,9 @@ impl Game<'_> {
             self.entity_killed_event_by(at, source);
             self.audio.play(&sound(&f, "break"), Some(at), 1.0, 1.0);
         }
-        // ItemFrame.dropItem clears the item (updating comparators) before drops.
-        if f.item.is_some() {
+        // ItemFrame.dropItem clears the item (updating comparators) before drops;
+        // a fixed frame's dropItem does nothing.
+        if !f.fixed && f.item.is_some() {
             self.frame_output_changed(f.pos);
         }
         self.drop_frame_items(&mut f, with_frame, by_player, creative);
@@ -539,6 +558,7 @@ impl Game<'_> {
                 rotation.rem_euclid(8) as u8,
             );
         }
+        true
     }
     /// `ItemFrame.setItem(stack, true)`: keeps one item, plays the add sound
     /// for a non-empty stack and updates the comparators.

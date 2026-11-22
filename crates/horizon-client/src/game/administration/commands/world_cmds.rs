@@ -398,7 +398,7 @@ impl Game<'_> {
         damage_type: &str,
         creative: bool,
     ) -> Option<horizon_world::damage_source::DamageTypeId> {
-        let registry = &self.motion.health.damage;
+        let registry = &self.health_resources.damage;
         let kind = registry.id(damage_type)?;
         let invulnerable = self
             .persist
@@ -441,32 +441,27 @@ impl Game<'_> {
             // `ItemFrame.canHurtWhenFixed`, then `BlockAttachedEntity.hurtServer`.
             if (!creative
                 && !self
-                    .motion
-                    .health
+                    .health_resources
                     .damage
                     .in_tag(kind, "minecraft:bypasses_invulnerability"))
                 || self.mob_griefing_refuses(causing)
             {
                 return false;
             }
-            // `ItemFrame.dropItem` does nothing for a fixed frame: the item
-            // goes with it, dropped or not.
-            self.item_frames[i].item = None;
-            self.hit_frame(i, true, causing, creative);
-            return true;
+            // `ItemFrame.dropItem` does nothing for a fixed frame: its item is
+            // removed with the frame, after the break is accepted.
+            return self.hit_frame_from(i, true, causing, creative);
         }
         // `ItemFrame.shouldDamageDropItem`: not an explosion, and something held.
         let explosion = self
-            .motion
-            .health
+            .health_resources
             .damage
             .in_tag(kind, "minecraft:is_explosion");
         let with_frame = explosion || self.item_frames[i].item.is_none();
         if with_frame && self.mob_griefing_refuses(causing) {
             return false;
         }
-        self.hit_frame(i, with_frame, causing, creative);
-        true
+        self.hit_frame_from(i, with_frame, causing, creative)
     }
 
     /// `BlockAttachedEntity.hurtServer` from `/damage` for a painting:

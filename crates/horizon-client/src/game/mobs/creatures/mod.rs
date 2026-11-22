@@ -5411,7 +5411,7 @@ impl Game<'_> {
             // AbstractArrow.onHitEntity on an item frame: spent when the
             // frame took the hit, turned back when a fixed one refused it.
             let (cause, creative) = self.projectile_source(p.owner, p.guest);
-            let hurt = self.projectile_hurts_frame(id, cause, creative);
+            let hurt = self.projectile_hurts_frame_from(id, cause, creative);
             let outcome = if hurt {
                 EntityHit::Hurt
             } else {

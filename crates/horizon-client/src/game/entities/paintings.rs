@@ -371,7 +371,7 @@ impl Game<'_> {
         };
         // BlockAttachedEntity.kill, before dropItem.
         self.entity_killed_event_by(at, source);
-        self.drop_painting(p, at, source);
+        self.drop_painting_from(p, at, source);
         true
     }
     /// `BlockAttachedEntity.tick`: a painting whose `survives()` failed is
@@ -380,7 +380,7 @@ impl Game<'_> {
         let Some((p, at)) = self.remove_painting(index, false) else {
             return false;
         };
-        self.drop_painting(p, at, None);
+        self.drop_painting(p, at, false);
         true
     }
     /// The removal `kill` and `discard` share: the mod hook, the entity, its
@@ -404,7 +404,13 @@ impl Game<'_> {
     }
     /// `Painting.dropItem`: the break sound, then the item unless drops are off
     /// or the player who broke it has infinite materials.
-    fn drop_painting(
+    fn drop_painting(&mut self, p: Painting, at: [f64; 3], by_player: bool) {
+        let source = by_player.then_some(super::commands::Target::Player);
+        self.drop_painting_from(p, at, source);
+    }
+    /// `drop_painting` with the damage source's entity: a blast's cause can be
+    /// the player whose infinite materials suppress the drop.
+    fn drop_painting_from(
         &mut self,
         p: Painting,
         at: [f64; 3],
