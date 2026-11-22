@@ -5,4 +5,5 @@ horizon-client game::integrated::default_gamemode_tests::default_gamemode_forces
 horizon-client game::integrated::default_gamemode_tests::default_gamemode_forces_the_player_who_ran_it lib daily resources
 horizon-client game::integrated::default_gamemode_tests::default_gamemode_leaves_players_alone_until_the_world_is_published lib daily resources
 horizon-client game::integrated::default_gamemode_tests::default_gamemode_reports_the_players_it_switched lib daily resources
+horizon-client game::integrated::default_gamemode_tests::gamemode_accepts_a_guest_source lib daily resources
 horizon-client game::integrated::default_gamemode_tests::gamemode_needs_a_player_source lib daily resources

@@ -1136,10 +1136,10 @@ impl Game<'_> {
         let Some(Arg::GameMode(mode)) = ctx.get("gamemode").cloned() else {
             return Ok(0);
         };
-        let targets = match ctx.get("target") {
-            // GameModeCommand.setMode: `getPlayerOrException`.
-            Some(_) => self.entities(ctx, "target", true)?,
-            None => vec![self.source_player()?],
+        let targets = if ctx.get("target").is_some() {
+            self.entities(ctx, "target", true)?
+        } else {
+            vec![self.implied(true)?]
         };
         let mut count = 0;
         for t in targets {

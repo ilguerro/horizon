@@ -190,6 +190,20 @@ fn gamemode_needs_a_player_source() {
     assert_eq!(modes(&game), [SURVIVAL, CREATIVE]);
 }
 
+/// `execute as <guest> run gamemode survival` switches that guest: a guest
+/// is a player source (`CommandSourceStack.getPlayerOrException`).
+#[test]
+#[ignore = "daily"]
+fn gamemode_accepts_a_guest_source() {
+    let mut game = game(false, false, false, false);
+    let server = game.server_source();
+    let switched = game
+        .execute_line(&format!("execute as {GUEST} run gamemode survival"), server)
+        .unwrap();
+    assert_eq!(switched, 1);
+    assert_eq!(modes(&game), [SURVIVAL, CREATIVE]);
+}
+
 /// The player who runs `/defaultgamemode` is one of the players it forces
 /// (`MinecraftServer.enforceGameTypeForPlayers` walks every player): when
 /// their command's turn ends they keep the new mode.
