@@ -87,3 +87,39 @@ fn a_teleport_wakes_a_sleeping_player_before_it_moves_them() {
     });
 }
 
+/// `native_player_teleported` hears the position the player was put at, not
+/// the command's own: a wake moves a relative destination off it.
+#[test]
+#[ignore = "daily"]
+fn a_waking_teleport_tells_the_mods_where_it_put_the_player() {
+    with_game(|game| {
+        asleep(game);
+        // A command's teleport of a server's player is told to the mods once
+        // their move is in the hub: `TeleportNote` is that queue, and
+        // `flush_teleport_notes` hands its `to` to `native_player_teleported`.
+        game.lan_acting = Some(1);
+        game.lan_acting_uuid = Some(99);
+        game.lan_acting_name = Some("Alice".into());
+        sleep(game);
+        // What `tp @s ~ ~ ~2` hands `teleportTo`: the command resolves the
+        // relative destination against the bed before the wake moves them.
+        game.teleport_to_in_level(
+            super::super::Target::Player,
+            [BED.x, BED.y, BED.z + 2.0],
+            None,
+            [true, true, true],
+            false,
+        );
+        let note = game.teleport_notes.last().expect("a note for the mods");
+        assert_eq!(
+            note.to,
+            [STOOD.x, STOOD.y, STOOD.z + 2.0],
+            "the mods hear where the teleport put them, not the command's own ~ ~ ~2"
+        );
+        assert_eq!(
+            game.player.as_ref().unwrap().position,
+            Vec3::new(note.to[0], note.to[1], note.to[2]),
+            "and the note is where they were put"
+        );
+    });
+}

@@ -1543,7 +1543,9 @@ impl Game<'_> {
                             uuid,
                             name,
                             from,
-                            to: pos,
+                            // Where the teleport placed them: a wake moves a
+                            // relative destination off the command's own.
+                            to: [v.x, v.y, v.z],
                             dimension: self.dim.id().to_owned(),
                         });
                 }

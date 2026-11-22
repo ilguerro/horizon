@@ -8,6 +8,7 @@ horizon-client game::big_dripleaf_tests::a_leaf_tilts_under_a_mob_an_item_a_boat
 horizon-client game::commands::modprofile::tests::modprofile_state_and_report_side_effects lib daily child-process
 horizon-client game::commands::selector_bounds_tests::actual_selector_uses_body_overlap_but_distance_stays_at_the_origin lib daily game-boot
 horizon-client game::commands::tp_motion::tp_motion_tests::a_teleport_wakes_a_sleeping_player_before_it_moves_them lib daily game-boot
+horizon-client game::commands::tp_motion::tp_motion_tests::a_waking_teleport_tells_the_mods_where_it_put_the_player lib daily game-boot
 horizon-client game::commands::world_cmds::allay_owner_damage_tests::allay_owner_adapters_compare_the_actual_player_uuid lib daily game-boot
 horizon-client game::container_loot::tests::commands_clone_and_structures lib daily child-process
 horizon-client game::container_loot::tests::player_and_world_triggers lib daily child-process
