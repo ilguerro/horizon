@@ -150,7 +150,7 @@ impl Game<'_> {
         self.with_level(|b, level, ticks| {
             // LilyPadBlock.entityInside: a boat inside a lily pad breaks it.
             scratch.boat_cells.clear();
-            for (at, bounds) in level.boat_trigger_boxes() {
+            for (at, bounds) in level.boat_trigger_boxes_with_positions() {
                 if !entity_ticking(at.x.floor() as i32, at.z.floor() as i32) {
                     continue;
                 }

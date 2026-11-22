@@ -498,12 +498,17 @@ fn server_only_block_use(
         .any(|class| block.has_class(class))
 }
 impl GameLevel<'_> {
+    /// `LilyPadBlock.entityInside`: the boxes of the boats that can break a pad.
+    fn boat_trigger_boxes(&self) -> impl Iterator<Item = Aabb> + '_ {
+        self.entities().boats.iter().map(boats::Boat::bounds)
+    }
     /// Boat positions gate entity ticking; their bounds determine lily pad collisions.
-    fn boat_trigger_boxes(&self) -> impl Iterator<Item = (Vec3, Aabb)> + '_ {
+    fn boat_trigger_boxes_with_positions(&self) -> impl Iterator<Item = (Vec3, Aabb)> + '_ {
         self.entities()
             .boats
             .iter()
-            .map(|b| (b.position, b.bounds()))
+            .zip(self.boat_trigger_boxes())
+            .map(|(boat, bounds)| (boat.position, bounds))
     }
     /// How many entities in `area` press plates and tripwires, or with
     /// `LIVING` only the living ones; a constant so a list of other kinds
