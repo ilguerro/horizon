@@ -65,7 +65,7 @@ fn hit_with(g: &mut Game<'_>, attack_damage: f32) -> (f32, Vec<String>, Vec<Stri
 /// `ENTITY_DAMAGE`; the blow still lands, so the victim cries out. At 1 it takes 1 and posts
 /// the vibration.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_blow_with_no_attack_damage_takes_nothing_and_posts_no_damage_event() {
     let Some(outcome) = with_game(|g| {
         let nothing = hit_with(g, 0.0);
