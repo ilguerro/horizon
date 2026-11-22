@@ -79,3 +79,32 @@ fn a_hook_result_take_uses_up_the_grid_and_its_remainders() {
         }
     });
 }
+
+/// The hook path ends in the same `ResultSlot.onTake`: it counts what the
+/// take removed once (`checkTakeAchievements`) and resets `removeCount`, so
+/// the next take starts from zero instead of counting the first one again.
+#[test]
+fn a_hook_result_take_counts_the_crafted_amount_once() {
+    bare_env(|base| {
+        let recipes = Recipes::empty();
+        let env = Env {
+            recipes: &recipes,
+            ..*base
+        };
+        let mut menu = Menu::new(Kind::Crafting);
+        menu.set_slot(&env, 1, Some(ItemStack::new("minecraft:stick", 2)));
+        menu.set_slot(&env, 0, Some(ItemStack::new("minecraft:diamond", 1)));
+        menu.click(&env, 0, 0, Input::Pickup).unwrap();
+        assert_eq!(
+            menu.crafted_counts,
+            [("minecraft:diamond".into(), 1)],
+            "the take counts the one item it removed"
+        );
+        assert_eq!(menu.remove_count, 0, "checkTakeAchievements reset it");
+        // A click on the emptied result takes nothing more, and counts nothing.
+        menu.carried = None;
+        menu.click(&env, 0, 0, Input::Pickup).unwrap();
+        assert_eq!(menu.crafted_counts, [("minecraft:diamond".into(), 1)]);
+        assert_eq!(menu.remove_count, 0);
+    });
+}
