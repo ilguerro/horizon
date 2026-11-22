@@ -16,7 +16,7 @@ use horizon_core::geometry::Vec3;
 /// A pearl in chunk (5, -3) of the Nether, with nobody in that level: the
 /// level ticks anyway, and so does the pearl's chunk and its neighbours.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_pearl_keeps_its_chunk_and_level_ticking_with_nobody_in_it() {
     let mut game = server_game();
     game.dim = Dim::Nether;
@@ -69,3 +69,4 @@ fn a_pearl_keeps_its_chunk_and_level_ticking_with_nobody_in_it() {
     assert!(!game.tickets.levels().block_ticking(6, -3));
     assert_eq!(game.levels_to_tick(), vec![Dim::Overworld]);
 }
+
