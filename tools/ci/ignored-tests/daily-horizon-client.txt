@@ -206,6 +206,9 @@ horizon-client game::server_travel::changed_dimension_tests::a_command_teleport_
 horizon-client game::server_travel::changed_dimension_tests::a_nether_portal_trip_is_heard_once_on_every_server lib daily resources
 horizon-client game::server_travel::changed_dimension_tests::an_end_gateway_jump_within_the_level_is_not_heard_on_any_server lib daily resources
 horizon-client game::server_travel::credits_respawn_tests::the_credits_respawn_waits_for_the_client_to_load lib daily resources
+horizon-client game::server_travel::end_exit_tests::a_gone_bed_at_the_end_exit_sends_no_respawn_block_available lib daily resources
+horizon-client game::server_travel::end_exit_tests::a_player_with_no_respawn_point_leaves_the_end_facing_the_spawn_angle lib daily resources
+horizon-client game::server_travel::end_exit_tests::the_end_exit_arrives_level_at_the_bed_it_slept_in lib daily resources
 horizon-client game::split::players::tests::offline_guests_join_only_local_servers lib daily network
 horizon-client game::stats::phantom_spawn_tests::no_phantoms_under_a_roof_the_sky_light_does_not_reach lib daily game-boot
 horizon-client game::stats::phantom_spawn_tests::phantoms_spawn_under_a_glass_roof lib daily game-boot

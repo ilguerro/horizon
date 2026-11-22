@@ -145,7 +145,7 @@ fn game_events(rx: &mpsc::Receiver<Out>) -> Vec<u8> {
 /// respawn point is level, and the player looks at the bed. The player's own
 /// pitch (looking straight up) is not carried through the exit.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn the_end_exit_arrives_level_at_the_bed_it_slept_in() {
     let (mut game, rx) = server();
     // The bed's head, as `setRespawnPosition` keeps it (a bed sets 0 pitch).
@@ -181,7 +181,7 @@ fn the_end_exit_arrives_level_at_the_bed_it_slept_in() {
 /// `TeleportTransition.missingRespawnBlock`: the Overworld's respawn data
 /// angles, and the player is told its spawn block is gone.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_gone_bed_at_the_end_exit_sends_no_respawn_block_available() {
     let (mut game, rx) = server();
     // The bed is broken: the point is still remembered, its block is not there.
@@ -216,7 +216,7 @@ fn a_gone_bed_at_the_end_exit_sends_no_respawn_block_available() {
 /// spawn with the level's respawn data angles, and no message (nothing is
 /// missing).
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_player_with_no_respawn_point_leaves_the_end_facing_the_spawn_angle() {
     let (mut game, rx) = server();
     game.lan.as_mut().unwrap().hub.guests.update(0, |g| {
