@@ -156,7 +156,7 @@ struct Kicked {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn kick_kicks_the_selectors_players_only() {
     let (mut game, [bob, carol]) = server_with_two_guests();
     assert!(game.run_command("team add red"));

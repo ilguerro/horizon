@@ -1,0 +1,2 @@
+# `/kick` kicks the players its selector finds, on a published world with prepared resources.
+horizon-client game::commands::extra::kick_selector_tests::kick_kicks_the_selectors_players_only lib daily resources
