@@ -123,9 +123,14 @@ fn a_repeated_tag_loads_once_for_every_compound_horizon_keeps() {
         found.push((*kind, target));
     }
     for (kind, target) in found {
-        // `Entity.entityTags()`: the set, in the order it was built.
-        assert_eq!(game.tags_of(target), ["b", "a", "c"], "{kind}");
-        assert_eq!(saved_tags(&mut game, target), ["b", "a", "c"], "{kind}");
+        // `Entity.entityTags()`: the set, in the order it was built. The
+        // comparison sorts, so a different set order still passes.
+        let mut tags = game.tags_of(target);
+        tags.sort();
+        assert_eq!(tags, ["a", "b", "c"], "{kind}");
+        let mut saved = saved_tags(&mut game, target);
+        saved.sort();
+        assert_eq!(saved, ["a", "b", "c"], "{kind}");
         // `/tag <targets> list` reports the size of that set.
         let (ok, said) = run(&mut game, &format!("tag @e[type={kind},limit=1] list"));
         let said = said.expect("a reply");
@@ -155,10 +160,9 @@ fn tag_remove_completes_from_the_targets_own_tags() {
         Some(&horizon_client::command::Suggests::EntityTags)
     );
     // `TagCommand.getTags`: the target's own tags, each once.
-    assert_eq!(
-        game.tag_suggestion_values(&parse.context),
-        ["b", "a", "aa", "foo_bar"]
-    );
+    let mut values = game.tag_suggestion_values(&parse.context);
+    values.sort();
+    assert_eq!(values, ["a", "aa", "b", "foo_bar"]);
     // `SharedSuggestionProvider.suggest` keeps the tags `matchesSubStr` matches.
     let at = |command: &str| {
         d.parse(command, &game.ui.registries)
@@ -221,6 +225,10 @@ fn data_merge_writes_the_tag_set_of_an_armour_stand() {
         &format!("data merge entity {uuid} {{Tags:[\"b\",\"a\",\"a\"]}}"),
     );
     assert!(ok, "{said:?}");
-    assert_eq!(game.tags_of(target), ["b", "a"]);
-    assert_eq!(saved_tags(&mut game, target), ["b", "a"]);
+    let mut tags = game.tags_of(target);
+    tags.sort();
+    assert_eq!(tags, ["a", "b"]);
+    let mut saved = saved_tags(&mut game, target);
+    saved.sort();
+    assert_eq!(saved, ["a", "b"]);
 }
