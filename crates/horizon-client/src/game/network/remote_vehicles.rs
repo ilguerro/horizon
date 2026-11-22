@@ -705,11 +705,11 @@ fn mount_move(m: &Mob) -> S {
     })
 }
 
-/// Avatar's VEHICLE attachment scales independently of the vehicle's seat.
 #[cfg(test)]
 #[path = "remote_vehicles/creative_flight_tests.rs"]
 mod creative_flight_tests;
 
+/// Avatar's VEHICLE attachment scales independently of the vehicle's seat.
 fn generic_player_seat(at: glam::DVec3, before: glam::DVec3, scale: f32) -> (Vec3, Vec3) {
     let offset = 0.6 * f64::from(scale);
     (
