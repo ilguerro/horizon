@@ -1,0 +1,3 @@
+# A pearl left in one level takes its owner from another (#16396). Daily resource tests must pass when selected.
+# Rows: PACKAGE TEST TARGET daily REASON.
+horizon-client game::server_travel::pearl_owner_tests::a_pearl_in_the_overworld_takes_its_owner_out_of_the_nether lib daily resources

@@ -87,7 +87,7 @@ fn server_with_a_guest_in_the_nether() -> (Game<'static>, LanHost) {
 /// Overworld comes back to the Overworld, where the pearl was, not to those
 /// coordinates in the Nether.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_pearl_in_the_overworld_takes_its_owner_out_of_the_nether() {
     let (mut game, host) = server_with_a_guest_in_the_nether();
     assert_eq!(game.dim, crate::game::Dim::Overworld);
