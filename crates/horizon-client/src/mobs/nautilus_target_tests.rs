@@ -176,6 +176,48 @@ fn charge(
     ran.then_some(events)
 }
 
+/// `TargetingConditions.test`'s `targeter.isAlliedTo(target)`: a mob on the
+/// nautilus' team is no combat target, so the charge passes it over for the
+/// stranger beside it.
+#[test]
+fn a_charge_passes_over_a_mob_on_its_own_team() {
+    let mut seen = None;
+    let ran = with_test_world(&[], |_, types| {
+        let kind = Arc::new(types.types["minecraft:cow"].clone());
+        seen = Some([
+            Mob::new(2, kind.clone(), Vec3::new(0.5, 64.0, 0.2), 0.0)
+                .seen(None, &crate::items::Items::empty()),
+            Mob::new(3, kind, Vec3::new(0.5, 64.0, 0.2), 0.0)
+                .seen(None, &crate::items::Items::empty()),
+        ]);
+    });
+    let Some(others) = seen.filter(|_| ran) else {
+        return;
+    };
+    let mut board = crate::scoreboard::Scoreboard::default();
+    board.add_team("t");
+    let team = board.team("t").expect("the team it just made").clone();
+    let teams = crate::mobs::Teams {
+        player: None,
+        mobs: [(1, &team), (2, &team)].into_iter().collect(),
+    };
+    let Some(events) = charge(&others, Vec3::new(0.5, 64.0, 0.2), Some(teams)) else {
+        return;
+    };
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, MobEvent::AttackMob { target: 3, .. })),
+        "the stranger in the box takes the hit: {events:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, MobEvent::AttackMob { target: 2, .. })),
+        "its team mate is untouched"
+    );
+}
+
 /// `TargetingConditions.test` refuses the targeter itself, and the tick's
 /// snapshot holds the nautilus being ticked: its own row in the box is
 /// passed over for the cow there.

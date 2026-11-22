@@ -460,6 +460,11 @@ fn combat_target(m: &mut Mob, w: &MobWorld, who: Who, range: Option<f64>, sight:
             }
         }
         Who::Mob(_) => {
+            // `targeter.isAlliedTo(target)`: a team mate is not a combat target
+            // (`Entity.isAlliedTo`).
+            if crate::scoreboard::teams_allied(w.teams.of(Who::Mob(m.id)), w.teams.of(who)) {
+                return false;
+            }
             // A mob's visibility is 1 here (Horizon tracks no mob's invisibility).
             let far = range.is_some_and(|r| m.distance_sqr(t.position) > r.max(2.0) * r.max(2.0));
             !far && (!sight || m.sees(w, who))
