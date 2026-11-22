@@ -249,14 +249,14 @@ impl Game<'_> {
                 if let Some(result) = crate::game::native_hooks::block_use_result(answer) {
                     (result, DryUse::default())
                 } else if hand == Hand::Main {
-                    self.remote_block_template(hand, &hit, held.as_ref(), true)
+                    self.remote_block_template_hand(hand, &hit, held.as_ref(), true)
                 } else {
                     (InteractionResult::Pass, DryUse::default())
                 }
             } else if !spectator && vanilla_block {
                 // useItemOn runs for either hand; useWithoutItem (inside
                 // `remote_block_reacts`) for the main hand only.
-                self.remote_block_reacts(hand, &hit, held.as_ref())
+                self.remote_block_reacts_hand(hand, &hit, held.as_ref())
             } else {
                 (InteractionResult::Pass, DryUse::default())
             };

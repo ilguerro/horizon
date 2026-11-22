@@ -17,9 +17,7 @@ impl Game<'_> {
         hit: &super::super::Hit,
         held: Option<&ItemStack>,
     ) -> bool {
-        self.remote_block_reacts(Hand::Main, hit, held)
-            .0
-            .consumes_action()
+        self.remote_block_reacts(hit, held).0.consumes_action()
     }
     /// `InteractionResult.CONSUME` for this click: the block keeps it and does nothing, so the
     /// item in hand never gets it either (an empty flower pot, a pressed button).
@@ -29,9 +27,18 @@ impl Game<'_> {
         held: Option<&ItemStack>,
     ) -> bool {
         matches!(
-            self.remote_block_reacts(Hand::Main, hit, held).0,
+            self.remote_block_reacts(hit, held).0,
             InteractionResult::Consume
         )
+    }
+
+    /// `remote_block_reacts` for one hand.
+    pub(super) fn remote_block_reacts_body(
+        &mut self,
+        hit: &super::super::Hit,
+        held: Option<&ItemStack>,
+    ) -> (InteractionResult, DryUse) {
+        self.remote_block_reacts_hand_body(Hand::Main, hit, held)
     }
 
     /// Whether the block hit takes a right click with `held` in `hand`
@@ -39,7 +46,7 @@ impl Game<'_> {
     /// a door, a button, a container, and the blocks it changed. Vanilla's
     /// client runs it on its own level first; this runs it on a copy, and
     /// `predict_use` keeps the changes it predicts.
-    pub(super) fn remote_block_reacts_body(
+    pub(super) fn remote_block_reacts_hand_body(
         &mut self,
         hand: Hand,
         hit: &super::super::Hit,
@@ -81,12 +88,24 @@ impl Game<'_> {
         if self.composter_takes(hit.pos, held) {
             return (InteractionResult::Success, DryUse::default());
         }
-        self.remote_block_template(hand, hit, held, false)
+        self.remote_block_template_hand_body(hand, hit, held, false)
+    }
+
+    /// `remote_block_template` for one hand.
+    #[allow(dead_code)] // the mod API's point; the hand-aware one is what the game calls
+    pub(super) fn remote_block_template_body(
+        &mut self,
+        hit: &super::super::Hit,
+        held: Option<&ItemStack>,
+        without_item: bool,
+    ) -> (InteractionResult, DryUse) {
+        self.remote_block_template_hand_body(Hand::Main, hit, held, without_item)
     }
 
     /// The shared dry-level boundary for a normal block use or the empty
-    /// method requested by a canceled `BLOCK` phase's `TryWithEmptyHand`.
-    pub(super) fn remote_block_template_body(
+    /// method requested by a canceled `BLOCK` phase's `TryWithEmptyHand`, for
+    /// one hand.
+    pub(super) fn remote_block_template_hand_body(
         &mut self,
         hand: Hand,
         hit: &super::super::Hit,

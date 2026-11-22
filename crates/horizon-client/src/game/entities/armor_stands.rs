@@ -2228,10 +2228,8 @@ enum EquipUse {
     Pass,
 }
 impl Game<'_> {
-    /// `Equippable.swapWithEquipmentSlot`: right-clicking armor swaps it into
-    /// its slot (the worn piece comes back to the hand). It runs on a client
-    /// too (`Item.use`), as the prediction the server's slot packets confirm.
-    fn equip_from_hand(&mut self, stack: &ItemStack) -> EquipUse {
+    /// `Equippable.swapWithEquipmentSlot`'s answer, without the swing.
+    fn equip_from_hand_use(&mut self, stack: &ItemStack) -> EquipUse {
         let Some((index, slot)) = hand_equip_slot(stack, self.items()) else {
             return EquipUse::Pass;
         };
@@ -2272,12 +2270,27 @@ impl Game<'_> {
         EquipUse::Swapped
     }
 
+    /// `Equippable.swapWithEquipmentSlot`: right-clicking armor swaps it into
+    /// its slot (the worn piece comes back to the hand). It runs on a client
+    /// too (`Item.use`), as the prediction the server's slot packets confirm.
+    #[allow(dead_code)] // the mod API's point; `equip_use` is what the game calls
+    pub(super) fn equip_from_hand(&mut self, stack: &ItemStack) -> bool {
+        match self.equip_from_hand_use(stack) {
+            EquipUse::Swapped => {
+                self.swing_arm();
+                true
+            }
+            EquipUse::Refused => true,
+            EquipUse::Pass => false,
+        }
+    }
+
     /// `Item.use`'s equippable branch as `Minecraft.startUseItem` sees it:
     /// whether the click ends at this hand. `Equippable.swapWithEquipmentSlot`'s
     /// SUCCESS swings; its FAIL does not consume the click, so the other hand
     /// still gets its turn. `None` when the item has no swap to try (PASS).
     pub(super) fn equip_use(&mut self, stack: &ItemStack) -> Option<bool> {
-        match self.equip_from_hand(stack) {
+        match self.equip_from_hand_use(stack) {
             EquipUse::Swapped => {
                 self.swing_arm();
                 Some(true)
