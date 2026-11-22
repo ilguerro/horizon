@@ -65,7 +65,7 @@ fn hatch(g: &mut Game<'_>, kind: &'static str, block: &str) {
 /// `spawnGhastling`: `EntityType.create(level, BREEDING)` and `addFreshEntity`
 /// with no `setPersistenceRequired`, so the ghastling is a plain mob.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn a_hatched_ghastling_is_not_persistent() {
     with_game(|g| {
         hatch(g, "spawn_ghastling", "minecraft:dried_ghast");
@@ -86,13 +86,19 @@ fn a_hatched_ghastling_is_not_persistent() {
             Some(&Tag::Byte(0)),
             "Mob.addAdditionalSaveData writes persistenceRequired"
         );
+        // The flag survives the save and load a chunk would do: the reloaded
+        // ghastling is still a plain mob, not one the save made persistent.
+        let reloaded = g.load_mob(nbt, None).expect("the saved ghastling loads");
+        let reloaded = g.mobs.iter().find(|m| m.id == reloaded).unwrap();
+        assert_eq!(reloaded.species(), Species::HappyGhast);
+        assert!(!reloaded.persistent, "the saved flag loads back as 0b");
     });
 }
 
 /// `FrogspawnBlock.hatchFrogspawn` calls `setPersistenceRequired` on each
 /// tadpole, so the same hatch path still marks them persistent.
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn hatched_tadpoles_are_still_persistent() {
     with_game(|g| {
         hatch(g, "hatch", "minecraft:frogspawn");
