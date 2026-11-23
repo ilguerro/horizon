@@ -19,7 +19,7 @@ fn said(lines: &[Text]) -> Vec<String> {
 }
 
 #[test]
-#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+#[ignore = "daily"]
 fn difficulty_stays_hard_on_a_hardcore_world() {
     let mut game = server_game();
     game.build_registries();
