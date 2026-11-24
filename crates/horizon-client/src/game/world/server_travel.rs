@@ -8,7 +8,7 @@
 //! exit once the destination has loaded around them.
 
 use super::end::GatewayJob;
-use super::nether_portal::{PLAYER_DELAY, Plan};
+use super::nether_portal::{Exit, ExitSearch, PLAYER_DELAY, Plan};
 use super::persist::OffLevel;
 use super::respawn_anchor::RespawnConfig;
 use super::respawn_position::Respawn;
@@ -162,6 +162,7 @@ macro_rules! server_ctx {
             next_entity: &mut $s.next_entity,
             spawn,
             spawn_angle: $s.level.world_spawn_angle,
+            spawn_dimension: $s.level.spawn_dimension(),
             sea_level: $s.end.locator().map_or(63, |terrain| terrain.sea_level()),
             difficulty: i32::from($s.ui.difficulty),
             difficulty_locked: $s.level.difficulty_locked,
@@ -419,14 +420,17 @@ impl Game<'_> {
         };
         let at = Vec3::new(g.position[0], g.position[1], g.position[2]);
         let seen_credits = g.seen_credits;
-        // EndGatewayBlock.getPortalDestination: none without its block entity.
+        // EndGatewayBlock.getPortalDestination: none without its block entity,
+        // and outside the End only the exit the block entity saved (its
+        // getPortalPosition creates one in the End alone).
         let gateway_ok = name != "end_gateway"
             || self
                 .world
                 .block_entities
                 .get(&(pos[0], pos[1], pos[2]))
                 .is_some_and(|e| {
-                    matches!(e, horizon_client::containers::BlockEntity::EndGateway(_))
+                    matches!(e, horizon_client::containers::BlockEntity::EndGateway(g)
+                        if self.dim == Dim::End || g.exit_portal.is_some())
                 });
         if !gateway_ok {
             self.as_guest(conn, |g| {
@@ -525,7 +529,7 @@ impl Game<'_> {
         if self.enter_level(plan.dim).is_err() {
             return false;
         }
-        let exists = self.find_exit_portal(plan).is_some();
+        let exists = !matches!(self.search_exit_portal(plan), ExitSearch::NoPortal);
         if let Err(e) = self.enter_level(source) {
             log::error!("could not reopen {}: {e}", source.id());
         }
@@ -643,8 +647,10 @@ impl Game<'_> {
         let Some(g) = host.hub.guest(conn) else {
             return;
         };
-        let (at, invulnerable, sleeping, riding) = (
+        let (at, previous, first_good, invulnerable, sleeping, riding) = (
             Vec3::new(g.position[0], g.position[1], g.position[2]),
+            g.previous_position,
+            g.first_good,
             g.creative(),
             g.sleeping,
             g.vehicle.is_some(),
@@ -705,7 +711,23 @@ impl Game<'_> {
             }
             return;
         }
-        let (end_portal, gateway) = self.inside_end_portals(at, WIDTH, HEIGHT);
+        // Entity.checkInsideBlocks sweeps from where this tick's moves began
+        // (`Entity.oldPosition`, the connection's firstGood position), not one
+        // box at the end; a teleport resets it to where it landed
+        // (ServerPlayer.teleport's resetPosition).
+        let from = if previous == [at.x, at.y, at.z] {
+            at
+        } else {
+            Vec3::new(first_good[0], first_good[1], first_good[2])
+        };
+        let (end_portal, gateway) = horizon_client::end_gateway::end_portals_inside(
+            from,
+            at,
+            WIDTH,
+            HEIGHT,
+            |p| self.block_name([p.x, p.y, p.z]),
+        );
+        let gateway = gateway.map(|p| [p.x, p.y, p.z]);
         if end_portal && !riding {
             // EndPortalBlock.entityInside: the first exit from the End shows the credits.
             let Some(host) = self.lan.as_mut() else {
@@ -1126,6 +1148,9 @@ impl Game<'_> {
             return;
         };
         let (job, destination) = self.gateway_job(gateway);
+        if job == GatewayJob::NoDestination {
+            return;
+        }
         let at = [destination.x, destination.y, destination.z];
         // Relative.union(DELTA, ROTATION).
         if let Some(host) = self.lan.as_mut() {
@@ -1311,14 +1336,18 @@ impl Game<'_> {
                     }
                 }
             } else {
-                let exit = trip
-                    .plan
-                    .as_ref()
-                    .and_then(|plan| self.nether_exit_portal(plan));
-                match (trip.plan, exit) {
-                    (Some(plan), Some(exit)) => {
+                let plan = trip.plan;
+                match plan.map(|plan| (plan, self.resolve_exit_portal(&plan))) {
+                    Some((plan, Exit::Found(exit))) => {
                         let (at, rotation) = self.arrival(&plan, exit);
                         (at, yaw + rotation)
+                    }
+                    Some((_, Exit::Waiting)) => {
+                        // The exit portal's chunk is still loading: its ticket
+                        // is placed; land once it is there.
+                        self.server_trips.insert(k, trip);
+                        k += 1;
+                        continue;
                     }
                     _ => (trip.target, yaw),
                 }
@@ -1606,6 +1635,7 @@ impl Game<'_> {
             next_entity: &mut self.next_entity,
             spawn,
             spawn_angle: self.level.world_spawn_angle,
+            spawn_dimension: self.level.spawn_dimension(),
             difficulty: i32::from(self.ui.difficulty),
             difficulty_locked: self.level.difficulty_locked,
             clock_rate,
@@ -2217,7 +2247,7 @@ mod transfer_lifetime_tests {
 }
 
 #[cfg(test)]
-mod credits_respawn_tests {
+pub(super) mod credits_respawn_tests {
     use crate::game::{Audio, Game, Options, Progress, Settings, load_resources};
     use horizon_client::lan::{
         Joined, NetConfig, PlayerSender,
@@ -2368,7 +2398,7 @@ mod credits_respawn_tests {
 
     /// A server on a scratch world with one guest, placed in the Overworld,
     /// whose own point is a respawn anchor in the Nether.
-    fn server_with_a_nether_anchor<'a>(
+    pub(crate) fn server_with_a_nether_anchor<'a>(
         resources: &'a mut Option<Arc<crate::game::Resources>>,
     ) -> (Game<'a>, std::path::PathBuf) {
         let mut game = crate::game::game_tests::tests::server_game(resources);
