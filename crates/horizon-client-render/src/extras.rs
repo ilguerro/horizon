@@ -788,7 +788,8 @@ impl Item {
             Pvp(o) => return o.parent().map(Pvp),
             Fullbright | DynamicLights | HideBlockParticles | MouseTweaks | Sort
             | AutoReconnect | NoAi | AgentControl | ReproKeys | Splitscreen | ChatAnimation
-            | WheelCyclesSettings | MusicPage | PackBrowser | Pregen | LanFarTerrain | SpyglassPolarLook => {
+            | WheelCyclesSettings | MusicPage | PackBrowser | Pregen | LanFarTerrain
+            | SpyglassPolarLook => {
                 return None;
             }
         })
