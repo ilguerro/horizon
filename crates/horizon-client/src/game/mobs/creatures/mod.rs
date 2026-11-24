@@ -31,6 +31,7 @@ mod spawn_egg_mob_tests;
 #[cfg(test)]
 #[path = "../../creatures/spawn_eggs_tests.rs"]
 mod spawn_eggs_tests;
+#[cfg(test)]
 #[path = "../../creatures/spawn_egg_tests.rs"]
 mod spawn_egg_tests;
 #[cfg(test)]
