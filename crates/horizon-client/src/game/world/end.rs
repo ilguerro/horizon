@@ -220,7 +220,7 @@ pub(super) fn end_arrival_transition(
 pub(super) struct EndState {
     /// Ticks until the player can use a gateway again (TheEndGatewayBlockEntity cooldown).
     gateway_cooldown: u32,
-    gateways: HashMap<u32, horizon_client::end_gateway::Traveller>,
+    pub(in crate::game) gateways: HashMap<u32, horizon_client::end_gateway::Traveller>,
     /// The entities that went through a gateway, waiting for its exit.
     arrivals: Vec<GatewayArrival>,
     /// The chunks kept loaded for those arrivals.
