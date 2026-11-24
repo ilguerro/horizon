@@ -730,14 +730,16 @@ impl Game<'_> {
         }
     }
     /// `LivingEntity.hurtArmor` -> `LivingEntity.doHurtEquipment`, from the hit
-    /// `MobEvent::ArmorHurt` reported. Only `Horse` overrides `hurtArmor` for a
-    /// mob, and its override asks for the BODY slot alone, so the body piece is
-    /// the only one this wears: it loses `max(1, damage / 4)` durability,
+    /// `MobEvent::ArmorHurt` reported. `Horse` and `Wolf` override `hurtArmor`,
+    /// and both ask for the BODY slot alone, so the body piece is the only one
+    /// this wears: it loses `max(1, damage / 4)` durability,
     /// Unbreaking applied, and at its maximum the slot empties and the break
     /// event goes out (`LivingEntity.entityEventForEquipmentBreak`: 65 for the
     /// body — 49 to 52 are the four armour slots, which only a player's own
     /// pieces reach). A fire hit leaves a fire-resistant piece alone
-    /// (`ItemStack.canBeHurtBy`).
+    /// (`ItemStack.canBeHurtBy`). A wolf's wolf armour wears inside the hit
+    /// (`wolf::wear_body`) instead, so that a hit the same tick breaks it cannot
+    /// absorb the next one.
     fn hurt_mob_armor(&mut self, id: u32, damage: f32, source: &HurtSource<'_>) {
         use horizon_core::equipment_slot::EquipmentSlot;
         if damage <= 0.0 {
@@ -2280,6 +2282,12 @@ impl Game<'_> {
                     amount,
                     source,
                 } => self.hurt_mob_armor(mob, amount, &source),
+                MobEvent::EquipmentBroke {
+                    mob,
+                    slot,
+                    stack,
+                    at,
+                } => self.mob_equipment_broke(mob, slot, &stack, at),
                 MobEvent::GliderWear { mob, slot } => self.wear_mob_glider(mob, slot),
                 MobEvent::EntityEvent { mob, event, at } => {
                     // Ravager.roar (event 69 ends it): with the raw mob_griefing rule (not
@@ -2329,6 +2337,13 @@ impl Game<'_> {
                 MobEvent::Sound(name, at, volume, pitch) => {
                     self.audio.play(&full_id(name), Some(at), volume, pitch)
                 }
+                MobEvent::SourcedSound(name, source, at, volume, pitch) => self.audio.play_on(
+                    source.index(),
+                    &full_id(name),
+                    Some(at),
+                    volume,
+                    pitch,
+                ),
                 MobEvent::ProfessionWorkSound(name, at, volume, pitch) => {
                     self.audio.play(&name, Some(at), volume, pitch)
                 }
@@ -4971,11 +4986,11 @@ impl Game<'_> {
             }
         }
     }
-    /// `AmethystBlock.onProjectileHit`: a projectile that strikes an amethyst
-    /// block rings `block.amethyst_block.chime` there, pitched by the level random.
+    /// `AmethystBlock.onProjectileHit`, inherited by every cluster, bud and
+    /// budding amethyst: a projectile that strikes one rings the chime there.
     pub(super) fn amethyst_projectile_hit(&mut self, pos: [i32; 3]) {
         let state = self.world.block(pos[0], pos[1], pos[2]);
-        if &*self.res.facts().get(state).name != "minecraft:amethyst_block" {
+        if !self.res.facts().get(state).has_class("AmethystBlock") {
             return;
         }
         let pitch = 0.5 + self.world.random.next_float() * 1.2;
@@ -8999,6 +9014,13 @@ mod local_sound_event_tests {
             MobEvent::Sound("entity.cow.hurt", [1.0, 100.0, 2.0], 0.5, 1.0),
             MobEvent::LocalSound("entity.breeze.whirl", [3.0, 100.0, 4.0], 0.8, 0.7),
             MobEvent::Sound("entity.zombie.hurt", [5.0, 100.0, 6.0], 1.0, 0.9),
+            MobEvent::SourcedSound(
+                "block.amethyst_block.chime",
+                mod_api::SoundSource::Neutral,
+                [7.0, 100.0, 8.0],
+                0.5,
+                1.2,
+            ),
         ])
         .unwrap();
         // A positive LocalSound must still take the playback path. An absent
@@ -9012,8 +9034,14 @@ mod local_sound_event_tests {
             game.audio.heard.get("minecraft:entity.zombie.hurt"),
             Some(&1)
         );
+        assert_eq!(
+            game.audio
+                .heard
+                .get("minecraft:block.amethyst_block.chime"),
+            Some(&1)
+        );
         let shared = game.audio.capture.as_ref().unwrap();
-        assert_eq!(shared.len(), 2, "LocalSound must not become a shared sound");
+        assert_eq!(shared.len(), 3, "LocalSound must not become a shared sound");
         assert_eq!(shared[0].event, "minecraft:entity.cow.hurt");
         assert_eq!(shared[1].event, "minecraft:entity.zombie.hurt");
         assert_eq!(
@@ -9033,6 +9061,16 @@ mod local_sound_event_tests {
                 shared[1].source
             ),
             ([5.0, 100.0, 6.0], 1.0, 0.9, 5)
+        );
+        assert_eq!(shared[2].event, "minecraft:block.amethyst_block.chime");
+        assert_eq!(
+            (
+                shared[2].position,
+                shared[2].volume,
+                shared[2].pitch,
+                shared[2].source
+            ),
+            ([7.0, 100.0, 8.0], 0.5, 1.2, 6)
         );
     }
 }
