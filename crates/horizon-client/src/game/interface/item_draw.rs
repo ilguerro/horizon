@@ -428,7 +428,7 @@ impl Game<'_> {
         }
     }
     /// Borrow the cached [`LevelState`] for this frame without cloning its `String` fields.
-    fn with_item_level<R>(&self, f: impl FnOnce(&LevelState) -> R) -> R {
+    pub(super) fn with_item_level<R>(&self, f: impl FnOnce(&LevelState) -> R) -> R {
         let dimension = self.dim.id();
         let key = (
             self.frames,

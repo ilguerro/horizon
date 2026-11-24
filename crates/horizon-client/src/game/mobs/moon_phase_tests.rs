@@ -25,25 +25,26 @@ fn the_nether_and_the_end_keep_a_full_moon_whatever_the_overworld_clock_says() {
     let mut game = server_game();
     game.build_registries();
     game.world.health_rules.difficulty = Difficulty::Normal;
-    let at = [0.5, 100.0, 0.5];
-    // The loaded chunk the difficulty and the biome facts read.
+    let at = [8.5, 100.0, 8.5];
+    // The loaded chunk the difficulty and the biome facts read: its middle, so the
+    // biome zoom stays inside it.
     assert_eq!(game.dim, Dim::Overworld);
     game.world.day_time = 0;
     assert!(
         game.world.chunks.contains_key(&(0, 0)),
         "getCurrentDifficultyAt reads the moon only with the chunk loaded"
     );
-    assert!(game.biome_facts(0, 100, 0).full_moon);
+    assert!(game.biome_facts(8, 100, 8).full_moon);
 
     // The Overworld follows its clock: a new moon at 102000 (phase 4), a third quarter
     // at 48000 (phase 2, half the light). No full-moon cat, no moon's share at all.
     for (clock, phase, moon) in [(102_000, 4, 0.0), (48_000, 2, 0.5)] {
         game.world.day_time = clock;
         assert!(
-            !game.biome_facts(0, 100, 0).full_moon,
+            !game.biome_facts(8, 100, 8).full_moon,
             "the Overworld at {clock}"
         );
-        assert_eq!(game.item_level().moon_phase, phase);
+        assert_eq!(game.with_item_level(|l| l.moon_phase), phase);
         assert_eq!(
             game.local_difficulty(at).effective,
             effective(clock, moon),
@@ -60,10 +61,10 @@ fn the_nether_and_the_end_keep_a_full_moon_whatever_the_overworld_clock_says() {
         game.dim = dim;
         for clock in [102_000, 48_000] {
             game.world.day_time = clock;
-            if !game.biome_facts(0, 100, 0).full_moon {
+            if !game.biome_facts(8, 100, 8).full_moon {
                 wrong.push(format!("{dim:?} at {clock}: no full-moon cat"));
             }
-            let phase = game.item_level().moon_phase;
+            let phase = game.with_item_level(|l| l.moon_phase);
             if phase != 0 {
                 wrong.push(format!("{dim:?} at {clock}: moon_phase {phase}, want 0"));
             }
