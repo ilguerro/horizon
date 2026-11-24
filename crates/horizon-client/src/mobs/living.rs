@@ -901,12 +901,16 @@ impl Mob {
     /// top of.
     pub fn apply_effects_from_blocks(&mut self, w: &MobWorld, events: &mut Vec<MobEvent>) {
         let mut tops = Vec::new();
+        // Entity.applyEffectsFromBlocks walks the recorded move, so a mob
+        // leaving a column sideways this tick still gets its last lift. The
+        // final box alone misses columns the start of the move touched.
+        let swept = self.bounds_at(self.previous).union_bounds(self.bounds());
         if crate::motion::bubble_column_push_over(
             w.world,
             w.registry,
             w.facts,
             w.collision,
-            self.bounds(),
+            swept,
             &mut self.velocity,
             |pos| tops.push(pos),
         ) {
@@ -2673,6 +2677,7 @@ mod tests {
                 others_index: None,
                 passenger_objects: &[],
                 others_villagers: None,
+                village: None,
                 species_slots: None,
                 others_solid: None,
                 daylight: true,
@@ -2806,6 +2811,7 @@ mod tests {
                 others_index: None,
                 passenger_objects: &[],
                 others_villagers: None,
+                village: None,
                 species_slots: None,
                 others_solid: None,
                 daylight: true,
@@ -2940,6 +2946,7 @@ mod tests {
             others_index: None,
             passenger_objects: &[],
             others_villagers: None,
+            village: None,
             species_slots: None,
             others_solid: None,
             daylight: true,
@@ -3083,6 +3090,7 @@ mod tests {
                 others_index: None,
                 passenger_objects: &[],
                 others_villagers: None,
+                village: None,
                 species_slots: None,
                 others_solid: None,
                 daylight: true,
@@ -3857,6 +3865,9 @@ pub mod teleports;
 #[cfg(test)]
 mod farmland_event_tests;
 
+#[cfg(test)]
+#[path = "climbable_player_push_tests.rs"]
+mod climbable_player_push_tests;
 #[cfg(test)]
 #[path = "living_climbable_tests.rs"]
 mod climbable_tests;
