@@ -9,6 +9,7 @@ players. Native and wasm mods use the same calls.
 |---|---|
 | `host.commands()` | `run_command(line)` runs through the console command path with permission level 4. `feedback(text)` answers the command source. |
 | `host.messages()` | `broadcast(text)` fires the broadcast hook and writes to the server log. `text_allowed(text)` checks the server chat filter. |
+| `host.messages().console_log(mod_id, level, line)` | Writes `line` to the server console and log at `ConsoleLevel::Info`, `Warn` or `Error`, prefixed `[mod_id] `, cut to 4096 bytes. Refuses an empty or over-64-byte mod id with `ConsoleLogRefusal` and logs nothing. This is also the way to answer a console command after it returned: its sender is the console. |
 | `host.players()` | `server_players()` returns `Vec<PlayerRef>` in connection order. `acting_player()` returns the optional player whose state is active in the hook. `player_by_name(name)` finds a connected real player by case-insensitive account name, not nickname. |
 | `host.profiles()` | `resolve_name(name)` and `resolve_id(uuid)` ask the game's Minecraft profile resolver, the one behind dynamic player heads and `/fetchprofile`, for an account's profile. The first call answers `ProfileResolution::Pending`; poll it from `server_tick` for `Done(Some(profile))`, or `Done(None)` when there is no such account or the lookup failed (for example, a rate-limited lookup). `Done(None)` does not prove the account is missing. The resolver caches answers, paces a mod's new lookups at 60 a minute, and reaches Mojang's services whatever the server's online mode. |
 | `host.levels()` | `list_levels()` returns loaded server levels in vanilla dimension order, or an empty list before a server world opens. |
@@ -22,6 +23,20 @@ On a client, `host.chat_line(Text::literal("Local notice"))?` adds a line only t
 the local chat HUD and history. It sends no packet and does not fire
 `client_chat_received`. Handle its `Result<(), mod_api::TextFormError>`: text
 exceeding the boundary's size or nesting limits is refused before reaching the HUD.
+
+### Client chat history
+
+Implement `Hooks::chat_history_capacity` to extend the local chat's history. The
+query runs once at client startup; it is not repeated when joining a world or
+server, receiving a message, or opening the chat screen. The event's `vanilla`
+field is `100`. Return `None` to leave the choice to the next listener, or
+`Some(16_384)` for the largest history. The first answer wins in hook order;
+the client clamps it to `100..=16_384`.
+
+The resulting cap applies separately to retained messages, wrapped display
+lines, and the submissions recalled with the Up and Down arrows. A message
+wrapping to several lines occupies one message slot but several display slots.
+The separate persisted command history in `command_history.txt` is unchanged.
 
 ## Running a command as an entity
 
@@ -55,6 +70,29 @@ custom dimensions. Both accept `&dyn Host`. On a server they identify the player
 current dimension, even when another dimension is ticking. On a client they
 identify the local player's level. Unknown, disconnected, replaced or stale handles
 return `None`.
+
+## Health and network entity ID
+
+A `PlayerRef` gives you the player's UUID. To read health, first call
+`player.entity()` for its `EntityRef`, then `host.living(entity)` for its
+`LivingRef`. Call `health(host)` and `max_health(host)` on that handle. Both
+return health points, where two points make one heart. Maximum health includes
+attribute modifiers. Use `entity.id()` for the network entity ID that entity
+events carry, and `player.uuid()` for persistent player identity.
+
+```rust
+use mod_api::{PlayerRef, ServerHost};
+
+fn player_health(host: &dyn ServerHost, player: PlayerRef) -> Option<(u32, f32, f32)> {
+    let entity = player.entity();
+    let living = host.living(entity)?;
+    Some((entity.id(), living.health(host)?, living.max_health(host)?))
+}
+```
+
+Handle `None` when the player has no body available to this hook or the handle
+has gone stale. A network ID comes from the entity handle itself, so reading
+`entity.id()` does not check that the entity still exists.
 
 ## Profiles and skins
 
@@ -101,6 +139,10 @@ UTF-16 units, values of 32767 and signatures of 1024. A list past a limit is
 refused and the login's own properties are sent. `player_login` follows later and
 can still refuse the player.
 
+`player.send_resource_pack(host, url, sha1, required, prompt)` (`player_send_resource_pack`) offers one player a resource pack while they play, as Paper's `Player#setResourcePack` does. Its id is the name UUID of the url, so offering the same url again replaces the pack; the answer comes back through `resource_pack_status`. `player.set_view_distance(host, chunks)` (`player_set_view_distance`) sets one player's radius, from 2 up to the server's view distance, until their client sends its settings again. `host.log_file()` is the path of the server log.
+
+`player.select_entities(host, token)` (`player_select_entities`) resolves one selector such as `@a` or `@e[type=villager]` as that player's command would, and returns the entities it names, or `None` when the text is not exactly one selector. `player_spawn_location` lets a mod change where a joining player is placed (level, position, look) before the login is sent. `player_teleport_cause` and `player_game_mode_cause` tell the cause of a teleport (`command`, `spectate`, `ender_pearl`, `chorus_fruit`, `nether_portal`, `end_portal`, `end_gateway`) and of a game mode change (`command`, `switcher`, `plugin`, `hardcore_death`); `mob_effect_added_detail` hears every effect given to a mob or player, with its duration and cause. `player.is_collidable(host)` says whether others collide with a player (not a spectator, not on a `never` team), and `entity_damaged_detail` names an armor stand as the victim of a hit.
+
 `entity.set_swimming(host, swimming)` (`entity_set_swimming`) sets the swimming flag of a server player or a guest, the one the next water update reads, as Paper's `Entity#setSwimming` does. It returns `false` for a mob, which keeps its own swim, and for a stale handle.
 
 `entity.detonate(host)` (`entity_detonate`) explodes an entity now: a primed TNT explodes where it stands with its power, as `PrimedTnt.explode` does, and a creeper is lit and explodes at once, as `Creeper.explodeCreeper` does. The entity is gone after its explosion. It returns `false`, changing nothing, for a stale handle, a kind that does not explode, or when the explosion itself fails.
@@ -134,6 +176,22 @@ sidebar on that one player's client, in place of the one shown before; `None` ta
 are shown, top first, each with its text and an optional right-hand value. The sidebar is not stored in the
 world's scoreboard, so `/scoreboard` and other players do not see it, and it is gone when the player leaves.
 It returns `Ok(false)` for a player who is not online; a text the boundary refuses changes nothing.
+
+To show one player different data for an entity than everyone else has, call
+`player.send_entity_data(host, entity, data)` with an `EntityViewData`: any of a
+`custom_name` (or `remove_custom_name`), `custom_name_visible`, the shared `flags` byte
+(invisible, glowing, crouching, ...) and the `pose`. That player's client is sent one
+`ClientboundSetEntityDataPacket`; the server's own state and every other client are
+untouched. A per-player hologram text or a seat pose only the sitter sees is built on it. The
+entity's next data change, or its pairing again after the viewer left its range, gives the
+viewer the real values back, so a mod that keeps a view sends it again from
+`player_start_tracking`. The call refuses with `EntityViewError`: `Client`, `Stale`,
+`NoConnection` for a fake viewer, `StaleEntity`, `Empty` when no field is set, `Conflict` for a
+name together with its removal, `Text` for a name the text boundary refuses, and `TooLarge` for a
+name the network encoding cannot carry (over 65,535 bytes of modified UTF-8 or past the network NBT
+quota); nothing is sent then. Each field is replaced on its own: the server keeps no per-viewer
+override, so a later change it sends for a field (the flags, say) shows that field's real value
+again while the other replaced fields stay as sent.
 
 To change only the name in the Tab list, use `player.set_list_name(host, Some(text))`.
 Everyone sees the new name at once, colours included; `None` shows the nickname or real
@@ -178,6 +236,27 @@ the list shows) and `hide_players` start as vanilla's answer. `hide_players` lea
 is dropped. An answer longer than a client reads (32767 characters) is replaced by the plain one, and so is any answer
 the mods do not finish within half a second. With no listener the request is not put to the game thread at all.
 The legacy ping of pre-1.7 clients is not asked.
+
+## Resource packs
+
+`player.push_resource_pack(host, ResourcePackOffer)` offers one player's client a pack while they play, as
+`ClientboundResourcePackPushPacket` does; `player.pop_resource_pack(host, Some(id))` takes it off again, and `None`
+takes off every pack the server pushed, the `resource-pack` of `server.properties` included. Build the offer with
+`ResourcePackOffer::new(id, url)` and set `sha1` (40 hex digits, or empty for no check), `required` and `prompt`.
+A pack pushed with the id of one the client holds replaces it; other ids stack. The client downloads the zip itself,
+so the URL must be reachable from that player.
+Like vanilla, popping does not retract an offer still waiting in an unanswered consent prompt;
+accepting that prompt can load the pack later. It is not a pending-offer cancellation API.
+
+`resource_pack_status_v2(player, name, pack, status)` hears the answers with the pack's id, including while the
+player is dead; `resource_pack_status(player, name, status)` keeps its three arguments and its firing point.
+`required` changes only
+what the client's screen offers: the server does not disconnect a player who declines a pack a mod pushed (it does
+so only for the `server.properties` pack), so a mod that needs the pack kicks on status 1 or 2 itself. Answers to the
+`server.properties` pack are given before the player has joined and are not heard. Both calls return
+`Result<(), PlayerPackRefusal>`: `Client`, `Stale`, `NoConnection`, and for a push `UrlTooLong` (over 32767
+UTF-16 code units), `HashTooLong` (over 40 UTF-16 code units) and `BadPrompt` (text the boundary refuses); a refused
+call sends nothing. Characters outside the BMP count as two code units.
 
 ## Chat lines and respawn
 
@@ -295,6 +374,8 @@ sets how many players may be on. Server only.
 |---|---|
 | `console_line` hook | Every line the server logs (what its console prints and `logs/latest.log` keeps): `level` (`INFO`, `WARN` or `ERROR`), the `thread` it names and the `message` without time or thread. Lines are collected from every thread while a mod listens and heard on the server thread at the start of the next server tick, in the order logged, so a listener may use the host. A line a `console_line` listener logs itself is not collected, so a listener that logs what it hears does not feed itself. At most 4096 lines wait between two ticks, each kept to its first 8192 bytes of `message` and 128 of `thread` (cut at a character boundary); the oldest lines are dropped with no notice, and the lines logged before the first tick a mod listens are not heard. Paper has no event for this (plugins add a Log4j appender), and neither has NeoForge. |
 | `host.commands().run_command_with_output(line)` | `run_command` with its feedback kept, on the same run path and source (the console's: one leading slash dropped, permission level 4, from the overworld's spawn): the same `CommandResult` as `entity.run_command_with_output` (see [server commands](server-commands.md)), with `success` (what `run_command` returns) and `feedback`, what the console would print as plain text, at most 256 lines of 4096 bytes each (further lines dropped, a longer one cut at a character boundary). Only the command's own feedback is kept, never lines logged meanwhile. A command that ran and failed is `success: false` with its message in `feedback`. A line run where no server is open to players, or empty once whitespace and the slash are dropped, runs nothing and is `success: false` with no feedback, as `run_command` answers `false` for it; there is no refusal type, as nothing here tells those apart from a failure that `run_command` cannot. The dedicated console's own commands (`stop`, `op`, `whitelist`, `ban`) are not reached and answer as a command that failed. A call made while another one runs captures its own feedback; the outer capture keeps what it had. |
+| `host.commands().command_info(label)` | Paper's `Server.getCommandMap().getCommand(label)`: the command the label names (a leading slash dropped), as a `CommandInfo` with `name`, `aliases` (vanilla's roots that redirect to it), `usages`, `level` (the lowest a mod's usages ask, or vanilla's permission) and `vanilla`. A native mod's registered usages are looked up first, then vanilla's root, with an alias resolved (`tp` gives `teleport`). `None` when neither has it. Reads only. Horizon has no permission nodes, so the level is the answer; the owning mod is not reported. |
+| `host.commands().command_names()` | The root names of every command the server answers, native mods' and vanilla's (aliases included), sorted, each once. Empty without a server world. |
 | `host.server_max_players()` / `host.server_set_max_players(n)` | Paper's `Server.getMaxPlayers` and `setMaxPlayers`: the limit logins are refused beyond and the server list shows, live. The read is `None` where no server is open to players, its one reason. The write takes effect from the next login and ping, changes players already on nothing, and does not write `server.properties` (a restart goes back to it, as Paper's does; the management protocol's `max_players` setting does write it). Zero is taken. Refuses, changing nothing, with `PlayerLimitRefusal::NotOpen` or `TooHigh { maximum }` for a limit above `i32::MAX`, vanilla's `int`. |
 ## Inventory, ender chest and saved data
 
@@ -304,6 +385,7 @@ For mods that copy or edit a player whole (a player-data sync, `/invsee`, `/ende
 |---|---|
 | `inventory_slots(host)` | The non-empty slots by `Inventory`'s numbers, lowest first: 0 to 35 the main inventory (0 to 8 the hotbar), 36 feet, 37 legs, 38 chest, 39 head, 40 off hand, 41 body, 42 saddle. `None` when no online player is behind the handle. |
 | `set_inventory_slot(host, slot, stack)` | `Inventory.setItem`: `None` empties the slot; there is no item check, so a worn slot takes any item. The client is sent the slot with the tick's inventory sync, and an open inventory menu shows the written stack. Returns `Result<(), PlayerDataRefusal>`; each refusal writes nothing: `Stale` (no online player), `Client`, `Dead`, `SlotOutOfRange { slot, last: 42 }` (never a panic) and `Stack(StackWriteError)` (a count or damage the item does not allow, an item the world lacks). |
+| `update_inventory_slot(host, slot, stack)` | The slot's own stack changed in place, as code edits it (an energy item charged in an armour slot): when the slot holds the same item, it takes `stack` with no equip sound and no equip game event, so a worn stack rewritten every tick is not heard each tick; attribute modifiers and the client's slot follow. Another item or an empty slot is an equip, written as `set_inventory_slot` writes it. Refuses as `set_inventory_slot` does. |
 | `ender_chest(host)` / `set_ender_chest_slot(host, slot, stack)` | The same pair for the 27 ender chest slots, 0 to 26, with `SlotOutOfRange { last: 26 }`; an open ender chest menu shows the written stack. |
 | `give_stack(host, stack)` | Gives one stack as `/give` does: matching stacks, then empty slots, and what does not fit is thrown from the player's eyes for that player alone, with no pickup delay. Refuses with `Stale`, `Client`, `Dead` or `Stack`, giving nothing. |
 | `persistent_data(host)` / `set_persistent_data(host, data)` | The compound mods keep on a player (NeoForge's `getPersistentData`), saved with the player under `NeoForgeData`; an empty compound removes it. It is never sent to a client and a change raises no notification. On a death respawn and on the first exit from the End only its `PlayerPersisted` sub-compound is carried over, whatever its type, and every other key is lost; dimension changes, later End exits and teleports keep all of it. Refuses with `Stale`, `Client`, `Dead` and `TooDeep` (data 512 levels deep or more in the player's file). For ports; new mods use attachments. |
@@ -314,10 +396,36 @@ A stack in an inventory slot, the ender chest or `give_stack` keeps all its comp
 Player inventory writes use vanilla numbers: 0 to 35 main (0 to 8 hotbar),
 36 to 39 armour feet to head, 40 offhand, 41 body, 42 saddle.
 `ItemPlace::PlayerSlot` uses 100 to 103 for armour and -106 for offhand.
-The inventory menu has no slot for body or saddle. All four player data writes
-(`set_inventory_slot`, `set_ender_chest_slot`, `give_stack`, `set_persistent_data`)
+The inventory menu has no slot for body or saddle. The player data writes
+(`set_inventory_slot` and `update_inventory_slot`, `set_ender_chest_slot`, `give_stack`, `set_persistent_data`)
 are undone by an open transaction abort; equipment effects and overflow drops
 wait for the outermost commit.
+
+## Scoreboard teams
+
+`host.team(name)` gives a team handle or `None`; `host.add_team(name)` makes a new team (`Err(NameTaken)` when it exists,
+`Err(Unavailable)` for an empty name, one with a space or one the saved scoreboard could not keep).
+`host.team_set_color(team, Some(TeamColor::Red))` sets its color to one of the sixteen chat colors, `None` for no color,
+as `/team modify <team> color` does, and is `true` only when the color changed. `host.team_join(team, holder)` moves a
+`ScoreHolder` (`Player`, `Entity` or a `Name`) into the team: `Ok(true)` when it moved, `Ok(false)` when it was on that
+team already, `Err(UnknownHolder)` for a holder the scoreboard cannot key and `Err(Stale)` for a team that is gone.
+`host.team_leave(team, holder)` takes the holder out of that team (`true` when it was on it) and `host.team_remove(team)`
+deletes a team and leaves its members with none. Teams are kept in the world's scoreboard, which the server saves, and
+members take the color in every client from the next tick's sync. A team handle resolves again on each call and goes
+stale when its team is removed or the world is opened again. Server only: a refused call changes nothing.
+
+## Advancement progress
+
+For mods that carry a player's advancements between servers. Server only. `player.advancements(host)` returns
+the progress as the JSON text `PlayerAdvancements.save` writes (each started advancement's `criteria`, with grant
+dates, and `done`, plus `DataVersion`), or `None` for a stale or unavailable player and on a client.
+`player.set_advancements(host, json)` replaces the whole progress from a JSON object, as a loaded file does:
+advancements and criteria this server lacks are dropped, nothing is awarded (no toast, chat line or reward), and
+the client receives the full tree with its next update. A hook that replaces the progress while a gameplay grant
+runs does not make that grant complete an advancement: what it imported is not rewarded. It returns `false`,
+changing nothing, for input that is not a JSON object, for a grant date that is not a date this server can send
+(a number, other text, a year out of range), and for a player who cannot take it: a stale or unavailable handle, a
+dead or not connected player, a client, or a world with no server list.
 
 ## Player statistics
 
@@ -335,3 +443,12 @@ Measuring a client's transaction round trip (a lag-compensating anticheat): send
 `ConfigServerHost::entity_range_percent()` (server side) returns the entity broadcast range the server hosts with,
 in percent of vanilla's (`entity-broadcast-range-percentage` of server.properties). It is `100` when no server is
 hosting a world, which is vanilla's default. Read only.
+
+## A player who is not online
+
+`host.offline_player_data(uuid)` returns the saved player file of a player who is not connected (`players/data/<uuid>.dat`)
+as the vanilla player compound, or None when there is no file, the file is not a compound, or the world is remote. It only
+reads. `host.set_offline_player_data(uuid, data)` replaces that file whole, the way a save writes it. It refuses with
+`OfflinePlayerDataRefusal::Online` while the player is connected: change a connected player through the player writes
+(their inventory, ender chest and hands), since their file is written again when they leave. A client or a remote world
+gets `NoServer`, and a file that cannot be written gets `Write`; nothing is changed by a refusal.

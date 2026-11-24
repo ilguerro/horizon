@@ -410,7 +410,7 @@ impl Launcher {
             .flex_col()
             .gap(px(28.))
             .child(banner)
-            .children(self.prepare_notice(cx));
+            .children((!t.glass).then(|| self.prepare_notice(cx)).flatten());
         // Home's Stable Update failed, its one retry included: its offer is gone until the list
         // is read again, so Home says why.
         let stable_failed = self.install_error.as_ref().filter(|(tag, _)| {
@@ -428,14 +428,15 @@ impl Launcher {
         if let Some(crash) = self.crash.clone() {
             page = page.child(self.crash_notice(crash, cx));
         }
+        page = page.children(self.api_notice(cx));
         page = if t.glass {
             // What Play still needs (and an open export or launch panel), above the tabs.
             page.child(rows).child(self.glass_home_tabs(cx))
         } else {
             page.child(self.home_tabs(rows, cx))
         };
-        if let Some(e) = self.client_error.clone() {
-            page = page.child(notice(e, &t));
+        if !t.glass {
+            page = page.children(self.client_error.clone().map(|error| notice(error, &t)));
         }
         page
     }
@@ -444,7 +445,7 @@ impl Launcher {
     /// while the window was open, or Download from Mojang when the Minecraft folders lack a
     /// library of the game. An instance whose pinned version isn't installed (and isn't
     /// installing) gets the same notice without a press first: it never plays another version.
-    fn prepare_notice(&self, cx: &mut Context<Self>) -> Option<Div> {
+    pub(super) fn prepare_notice(&self, cx: &mut Context<Self>) -> Option<Div> {
         let t = self.theme;
         let installing = self.installing.as_ref().map(|(tag, _)| tag.as_str());
         let pin = self
@@ -483,7 +484,143 @@ impl Launcher {
             ),
             None => None,
         };
-        Some(notice(error, &t).children(action.map(|a| a.bg(t.plate))))
+        Some(if t.glass {
+            glass_home::play_notice(error).children(action.map(|a| div().child(a)))
+        } else {
+            notice(error, &t).children(action.map(|a| a.bg(t.plate)))
+        })
+    }
+
+    /// The selected instance's graphics API notice (`backend::api_fallback`): the launcher switched
+    /// it after a start crash, or (Windows) its settings name DirectX 12 and nothing says who
+    /// chose it. It stays until the player answers: "Try Automatic again" writes the earlier
+    /// setting back, "Keep" dismisses it for good. Not while a game runs, whose settings it
+    /// would write under.
+    fn api_notice(&self, cx: &mut Context<Self>) -> Option<Div> {
+        use backend::api_fallback::{self, Notice};
+        let t = self.theme;
+        if self.client.is_some() || self.starting_client.is_some() {
+            return None;
+        }
+        let instance = self.selected_instance();
+        if instance.is_some_and(|i| i.java.is_some()) {
+            return None;
+        }
+        let home = instance.map_or_else(backend::game_home, |i| i.home.clone());
+        let cached = self
+            .api_notice
+            .borrow()
+            .as_ref()
+            .filter(|(of, _)| *of == home)
+            .map(|(_, notice)| notice.clone());
+        let found = match cached {
+            Some(found) => found,
+            None => {
+                let found = api_fallback::notice(&home, std::env::consts::OS);
+                self.api_notice.replace(Some((home.clone(), found.clone())));
+                found
+            }
+        }?;
+        let (words, from, to) = match &found {
+            Notice::Switched(switch) => (
+                trf(
+                    "The game crashed in the graphics driver while starting, so the launcher \
+                     switched this instance from {from} to {to}. {to} can be slower on some \
+                     graphics cards. You can change this later in the game's graphics options.",
+                    &[
+                        ("from", tr(api_fallback::label(&switch.from))),
+                        ("to", api_fallback::label(&switch.to)),
+                    ],
+                ),
+                api_fallback::label(&switch.from),
+                api_fallback::label(&switch.to),
+            ),
+            Notice::FoundDx12 => (
+                tr(
+                    "This game is set to DirectX 12. An older launcher version could set this by \
+                     itself after a start problem. If you did not choose it, Automatic is usually \
+                     faster. You can change this later in the game's graphics options.",
+                )
+                .to_owned(),
+                "Automatic",
+                "DirectX 12",
+            ),
+        };
+        let (try_home, keep_home) = (home.clone(), home);
+        let try_again = button(
+            "api-notice-try",
+            trf("Try {api} again", &[("api", tr(from))]),
+            Kind::Secondary,
+            &t,
+        )
+        .bg(t.plate)
+        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+            this.answer_api_notice(&try_home, false);
+            cx.notify();
+        }));
+        let keep = button(
+            "api-notice-keep",
+            trf("Keep {api}", &[("api", to)]),
+            Kind::Secondary,
+            &t,
+        )
+        .bg(t.plate)
+        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+            this.answer_api_notice(&keep_home, true);
+            cx.notify();
+        }));
+        let actions = div()
+            .flex()
+            .flex_wrap()
+            .gap(px(8.))
+            .mt(px(8.))
+            .child(try_again)
+            .child(keep);
+        let body = div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(px(4.))
+            .child(words)
+            .child(actions);
+        Some(
+            plate(&t)
+                .flex()
+                .gap(px(14.))
+                .p(px(24.))
+                .text_size(px(theme::UI.px))
+                .line_height(px(21.))
+                .text_color(t.ink)
+                .child(div().flex_none().mt(px(11.)).size(px(6.)).bg(t.danger))
+                .child(body),
+        )
+    }
+
+    /// The player answered the graphics API notice of the game folder `home`: "Keep", or "Try
+    /// Automatic again". An answer that could not be written says why and asks again.
+    fn answer_api_notice(&mut self, home: &std::path::Path, keep: bool) {
+        use backend::api_fallback;
+        let answered = if keep {
+            api_fallback::keep(home)
+        } else {
+            api_fallback::try_previous(home).map(|_| ())
+        };
+        let line = match &answered {
+            Ok(()) if keep => format!(
+                "Horizon launcher: graphics API notice in {}: kept",
+                home.display()
+            ),
+            Ok(()) => format!(
+                "Horizon launcher: graphics API notice in {}: the earlier setting is back",
+                home.display()
+            ),
+            Err(e) => format!("Horizon launcher: graphics API notice not answered: {e}"),
+        };
+        eprintln!("{line}");
+        crate::console_page::keep_line(&mut self.prepare_log, &mut self.log_revision, line);
+        self.client_error = answered.err();
+        self.api_notice.replace(None);
     }
 
     /// "Horizon crashed": the report and the logs, and where to report it.

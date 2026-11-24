@@ -172,6 +172,14 @@ pub trait ConfigServerHost {
     /// keeps world data in level attachments.
     #[access(WorldOnly)]
     fn world_dir(&self) -> Option<PathBuf>;
+    /// Side: server.
+    /// The path of the server log being written now (`logs/latest.log` under the game's home).
+    /// Paper has no such call; a plugin builds the path by convention. Whether the file exists
+    /// yet is not checked: it is the place to read, not a promise that it is there.
+    ///
+    /// Not on wasm: a path in the game's file system, which a wasm mod has none of.
+    #[access(WorldOnly)]
+    fn log_file(&self) -> PathBuf;
     /// Side: server. The calling mod's bulk files in the current save's
     /// `horizon-mod-data/<mod id>/`, copied, backed up and deleted with that
     /// save. Paths omit the mod id. Calls refuse with `NoWorld` before a
@@ -189,6 +197,12 @@ pub trait ConfigServerHost {
     /// Returns `UnknownRule` for an unknown id; level reads use the same store.
     #[access(WorldOnly)]
     fn game_rule(&self, id: &str) -> Result<GameRuleValue, GameRuleReadError>;
+    /// Side: server.
+    /// The default value of rule `id` in the server-wide store (`GameRule.getDefault`), the value
+    /// the rule has before `/gamerule` or a mod changes it. None for an unknown id, so a rule
+    /// that was never registered reads as absent, not as a default.
+    #[access(WorldOnly)]
+    fn game_rule_default(&self, id: &str) -> Option<GameRuleValue>;
     /// Side: server.
     /// The retained server reload listeners of the last successful reload.
     #[access(WorldOnly)]

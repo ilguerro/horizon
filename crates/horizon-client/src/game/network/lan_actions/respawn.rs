@@ -207,6 +207,16 @@ impl Game<'_> {
                 host.hub
                     .set_game_mode(conn, to.id(), &self.world, Some(self.collision));
             }
+            // A spectator respawning stays one: no change, so no cause.
+            if !cancel && from != to {
+                self.native_player_game_mode_cause(mod_api::__private::PlayerGameModeCauseCall {
+                    player: uuid,
+                    name: &name,
+                    from,
+                    to,
+                    cause: "hardcore_death",
+                });
+            }
         }
         // PlayerList.respawn: `copyRespawnPosition` hands the new player the
         // old point through `setRespawnPosition`: none, or an Overworld forced
@@ -334,6 +344,10 @@ impl Game<'_> {
             if let Some(play) = self.lan.as_mut().and_then(|host| host.play.get_mut(&conn)) {
                 play.hook.discard();
             }
+            // ServerPlayer.die: shoulder parrots are dropped at the death
+            // spot before the loot and the death message. `host`'s borrow
+            // ends with the condition, so as_guest may take `&mut self`.
+            self.as_guest(conn, |game| game.remove_entities_on_shoulder());
         }
         let Some(host) = self.lan.as_mut() else {
             return;
