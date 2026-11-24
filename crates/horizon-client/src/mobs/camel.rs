@@ -400,7 +400,11 @@ pub fn voice(m: &Mob, which: usize) -> &'static str {
         (_, true) => "entity.camel_husk.eat",
     }
 }
+/// `Entity.playSound`: a silent camel makes none (its game events still post).
 fn sound(m: &Mob, name: &'static str, events: &mut Vec<MobEvent>) {
+    if m.silent {
+        return;
+    }
     events.push(MobEvent::Sound(
         name,
         [m.position.x, m.position.y, m.position.z],
@@ -830,6 +834,32 @@ mod tests {
         assert!(actions(&events).is_empty(), "already standing");
         stand_up_instantly(&mut m, &mut events);
         assert_eq!(actions(&events), vec![at], "up at once");
+    }
+
+    /// `Entity.playSound` skips a silent entity: a `Silent` camel sits and
+    /// stands without `entity.camel.sit` or `entity.camel.stand`.
+    #[test]
+    fn a_silent_camel_sits_and_stands_without_a_sound() {
+        let sounds = |events: &[MobEvent]| {
+            events
+                .iter()
+                .filter(|e| matches!(e, MobEvent::Sound(..)))
+                .count()
+        };
+        let mut m = camel();
+        m.age = 100;
+        let mut events = Vec::new();
+        sit_down(&mut m, &mut events);
+        assert_eq!(sounds(&events), 1, "a camel that is not silent sits aloud");
+        m.age += SIT_DOWN as u32;
+        stand_up(&mut m, &mut events);
+        m.silent = true;
+        m.age += 100;
+        events.clear();
+        sit_down(&mut m, &mut events);
+        m.age += SIT_DOWN as u32;
+        stand_up(&mut m, &mut events);
+        assert_eq!(sounds(&events), 0, "{events:?}");
     }
 
     /// `Camel.actuallyHurt` stands the camel up before the damage, so no hit
