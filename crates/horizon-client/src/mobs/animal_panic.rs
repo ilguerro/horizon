@@ -110,7 +110,7 @@ pub fn water_pos(m: &Mob, w: &MobWorld, range: i32) -> Option<[i32; 3]> {
 /// `AnimalPanic.lookForWater`: a mob whose bounding box rounds up to two
 /// blocks wide (`Mth.ceil(getBbWidth()) == 2`, the camel) wants the three
 /// blocks south, east and south-east of the spot to be water too.
-fn animal_water_pos(m: &Mob, w: &MobWorld, range: i32) -> Option<[i32; 3]> {
+pub(crate) fn animal_water_pos(m: &Mob, w: &MobWorld, range: i32) -> Option<[i32; 3]> {
     if f64::from(m.width()).ceil() != 2.0 {
         return water_pos(m, w, range);
     }

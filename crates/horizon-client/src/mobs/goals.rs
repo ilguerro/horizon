@@ -1102,6 +1102,7 @@ impl Panic {
 }
 #[path = "animal_panic.rs"]
 mod animal_panic;
+pub(crate) use animal_panic::animal_water_pos;
 pub use animal_panic::{AnimalPanic, water_pos};
 
 pub fn should_panic(m: &Mob) -> bool {
