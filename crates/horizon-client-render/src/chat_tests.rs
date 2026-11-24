@@ -115,6 +115,15 @@ fn font() -> Font {
     )
 }
 
+/// `Text::copyable` with English's `chat.square_brackets`, so these tests need no game assets.
+fn copyable(value: String) -> Text {
+    let brackets = crate::lang::Language::of(
+        crate::lang::DEFAULT,
+        [("chat.square_brackets".to_owned(), "[%s]".to_owned())],
+    );
+    crate::lang::scoped(brackets, || Text::copyable(value)).0
+}
+
 fn add(chat: &mut Chat, font: &Font, content: Text) {
     for content in font.wrap_components(&content, chat.max_width()) {
         chat.lines.push_front(Line {
@@ -187,7 +196,7 @@ fn clicking_seed_copies_the_raw_value_only_inside_the_link() {
     let font = font();
     for seed in [1, -42, i64::MIN, i64::MAX] {
         let mut chat = Chat::default();
-        let seed_text = Text::copyable(seed.to_string()).with_color(text::GOLD);
+        let seed_text = copyable(seed.to_string()).with_color(text::GOLD);
         assert_eq!(seed_text.plain(), format!("[{seed}]"));
         assert_eq!(seed_text.spans[0].style.color, Some(text::GOLD));
         assert_eq!(seed_text.spans[1].style.color, Some(text::GREEN));
@@ -219,7 +228,7 @@ fn shift_clicking_the_seed_link_has_the_value_to_type() {
     add(
         &mut chat,
         &font,
-        Text::literal("Seed: ").append(Text::copyable(seed.to_string())),
+        Text::literal("Seed: ").append(copyable(seed.to_string())),
     );
     let link = ClickEvent::CopyToClipboard(seed.to_string());
     let mut linked = 0;

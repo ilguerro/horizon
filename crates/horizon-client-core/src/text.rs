@@ -390,21 +390,21 @@ impl Text {
     pub fn colored(s: impl Into<String>, color: u32) -> Self {
         Self::styled(s, Style::color(color))
     }
-    /// ComponentUtils.copyOnClickText: a green, bracketed clipboard link, whose
-    /// value a Shift-click also types into the chat box (`withInsertion`).
+    /// ComponentUtils.copyOnClickText: a green clipboard link, whose value a
+    /// Shift-click also types into the chat box (`withInsertion`), wrapped in
+    /// `chat.square_brackets` (`ComponentUtils.wrapInSquareBrackets`).
     pub fn copyable(s: impl Into<String>) -> Self {
         let s = s.into();
-        Self::literal("[")
-            .append(Self::styled(
-                s.clone(),
-                Style {
-                    click: Some(ClickEvent::CopyToClipboard(s.clone())),
-                    hover: Some(std::sync::Arc::new(Self::translate("chat.copy.click", &[]))),
-                    insertion: Some(s),
-                    ..Style::color(GREEN)
-                },
-            ))
-            .append("]")
+        let link = Self::styled(
+            s.clone(),
+            Style {
+                click: Some(ClickEvent::CopyToClipboard(s.clone())),
+                hover: Some(std::sync::Arc::new(Self::translate("chat.copy.click", &[]))),
+                insertion: Some(s),
+                ..Style::color(GREEN)
+            },
+        );
+        Self::translate("chat.square_brackets", &[link])
     }
     /// LocateCommand's coordinate link: suggest a teleport without executing it.
     /// Structure and POI results preserve the player's current height (`~`).
@@ -1862,23 +1862,37 @@ mod tests {
         // ComponentUtils.copyOnClickText: the same text is the click event, the hover
         // and the style's insertion, which ChatScreen.handleComponentClicked types into
         // the chat box on a Shift-click.
-        let link = Text::copyable("-9223372036854775808");
-        assert_eq!(link.plain(), "[-9223372036854775808]");
-        assert_eq!(
-            link.spans[1].style.insertion.as_deref(),
-            Some("-9223372036854775808")
-        );
-        assert_eq!(
-            link.spans[1].style.click,
-            Some(ClickEvent::CopyToClipboard("-9223372036854775808".into()))
-        );
-        // The brackets wrap the link without taking its style.
-        assert_eq!(link.spans[0].style.insertion, None);
-        assert_eq!(link.spans[2].style.insertion, None);
-        assert_eq!(
-            link.component()["extra"][0]["insertion"],
-            json!("-9223372036854775808")
-        );
+        let seed = "-9223372036854775808";
+        for (wrapper, plain) in [
+            ("[%s]", format!("[{seed}]")),
+            ("〈%s〉", format!("〈{seed}〉")),
+        ] {
+            let language = lang::Language::of(
+                lang::DEFAULT,
+                [("chat.square_brackets".to_owned(), wrapper.to_owned())],
+            );
+            let (link, _) = lang::scoped(language, || Text::copyable(seed));
+            // The language's own brackets (ComponentUtils.wrapInSquareBrackets).
+            assert_eq!(link.plain(), plain);
+            let value = link
+                .spans
+                .iter()
+                .find(|span| span.style.click.is_some())
+                .expect("the value is a link");
+            assert_eq!(value.text, seed);
+            assert_eq!(value.style.insertion.as_deref(), Some(seed));
+            assert_eq!(
+                value.style.click,
+                Some(ClickEvent::CopyToClipboard(seed.into()))
+            );
+            // The brackets wrap the link without taking its style.
+            for span in link.spans.iter().filter(|span| span.text != seed) {
+                assert_eq!(span.style.insertion, None);
+            }
+            let component = link.component();
+            assert_eq!(component["translate"], json!("chat.square_brackets"));
+            assert_eq!(component["with"][0]["insertion"], json!(seed));
+        }
     }
     #[test]
     fn click_events_serialize_and_inherit_as_one_style_field() {
@@ -1903,13 +1917,22 @@ mod tests {
             let text = Text::literal("link").with_style(&style);
             assert_eq!(text.component()["click_event"], json);
             assert_eq!(text.rendered.spans[0].style.click, Some(event));
-            let child = Text::copyable("42").with_style(&style);
+            let brackets = lang::Language::of(
+                lang::DEFAULT,
+                [("chat.square_brackets".to_owned(), "[%s]".to_owned())],
+            );
+            let (child, _) = lang::scoped(brackets, || Text::copyable("42").with_style(&style));
             assert_eq!(
-                child.rendered.spans[1].style.click,
-                Some(ClickEvent::CopyToClipboard("42".into()))
+                child
+                    .rendered
+                    .spans
+                    .iter()
+                    .find(|span| span.text == "42")
+                    .map(|span| span.style.click.clone()),
+                Some(Some(ClickEvent::CopyToClipboard("42".into())))
             );
             assert_eq!(
-                child.component()["extra"][0]["click_event"],
+                child.component()["with"][0]["click_event"],
                 json!({"action": "copy_to_clipboard", "value": "42"})
             );
         }

@@ -27,7 +27,8 @@ mod tests {
         fn read(&self, path: &str) -> Option<Vec<u8>> {
             (path == "assets/minecraft/lang/en_us.json").then(|| {
                 br#"{
-                    "menu.multiplayerOptions.publish.started.lan": "This world is now open to LAN. The port number is %s"
+                    "menu.multiplayerOptions.publish.started.lan": "This world is now open to LAN. The port number is %s",
+                    "chat.square_brackets": "[%s]"
                 }"#
                 .to_vec()
             })

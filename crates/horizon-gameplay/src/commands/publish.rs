@@ -77,7 +77,8 @@ mod tests {
         fn read(&self, path: &str) -> Option<Vec<u8>> {
             (path == "assets/minecraft/lang/en_us.json").then(|| {
                 br#"{
-                    "commands.publish.started.lan": "Local game hosted on port %s"
+                    "commands.publish.started.lan": "Local game hosted on port %s",
+                    "chat.square_brackets": "[%s]"
                 }"#
                 .to_vec()
             })
