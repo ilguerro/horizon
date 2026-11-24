@@ -7594,7 +7594,7 @@ impl Game<'_> {
         );
         let (species, variant, color) =
             (parent.species(), parent.extra.variant, parent.extra.color);
-        let (parent_id, tame, owner) = (parent.id, parent.extra.tame, parent.extra.owner);
+        let (tame, owner) = (parent.extra.tame, parent.extra.owner);
         // `MushroomCow.getBreedOffspring(level, this)`: the egg's mate is the
         // parent itself, so the colour always rolls `nextInt(1024) == 0` to
         // flip, and every other roll spends the coin flip that can only pick
