@@ -912,6 +912,16 @@ mod tests {
         crate::mobs::equine::ridden_step(&mut m, crate::test_resources::server_loop_context());
         assert!(!sitting(&m), "forward stands it up");
         assert!(in_transition(&m), "over the 52 ticks it takes to get up");
+        assert!(!m.outbox.is_empty(), "the server plays the sound");
+        // The rider's client copy stands up as well, and leaves the sound to the server.
+        m.extra.camel_sitting = true;
+        m.age += SIT_DOWN as u32;
+        m.extra.egg_time = 0;
+        m.extra.client_side = true;
+        m.outbox.clear();
+        crate::mobs::equine::ridden_step(&mut m, crate::test_resources::server_loop_context());
+        assert!(!sitting(&m), "the client copy stands up too");
+        assert!(m.outbox.is_empty(), "no sound: {:?}", m.outbox);
     }
 
     /// `CamelAi`'s brain `RandomLookAround(UniformInt.of(150, 250), 30.0F,
