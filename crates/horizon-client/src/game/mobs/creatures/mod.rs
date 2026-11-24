@@ -1270,11 +1270,10 @@ impl Game<'_> {
             self.died.insert(m.id);
             self.mob_died(&m);
         }
-        // Before the mobs' `baseTick`s: a saved `last_hurt_by_mob` names its
-        // attacker, and a player memory that ran out forgets the player.
-        self.settle_hurt_by_records();
         // Their victims have been looted and mourned: no charged creeper is
         // waiting any more.
+        // Resolve saved attacker UUIDs before the mobs run baseTick.
+        self.resolve_last_hurt_by_refs();
         self.combat.charged_exploders.clear();
         self.combat.exploded.clear();
         self.combat.exploded_kinds.clear();

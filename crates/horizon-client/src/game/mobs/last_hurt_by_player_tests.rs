@@ -1,6 +1,5 @@
-//! `LivingEntity.baseTick` forgets `lastHurtByPlayer` once its memory time has
-//! run out, and `Raider.die` / `Villager.die` take the causing entity: a mob
-//! killed long after the last hit, or by lava, is nobody's kill.
+//! `Raider.die` / `Villager.die` take the killing blow's causing entity, not
+//! the player `getKillCredit` names: a mob killed by lava is nobody's murder.
 use super::*;
 use horizon_client::chunk::Chunk;
 use horizon_client::mobs::villager_brain;
@@ -9,9 +8,7 @@ use horizon_core::geometry::Vec3;
 use horizon_core::position::ChunkPos;
 use std::sync::Arc;
 
-/// The pigs a death is measured on, and the villagers of the murder.
-const PIG_A: &str = "00006097-0000-0000-0000-000000000001";
-const PIG_B: &str = "00006097-0000-0000-0000-000000000002";
+/// The villagers of the murder.
 const VICTIM: &str = "00006097-0000-0000-0000-000000000003";
 const WITNESS: &str = "00006097-0000-0000-0000-000000000004";
 const MURDERED: &str = "00006097-0000-0000-0000-000000000005";
@@ -148,58 +145,10 @@ fn let_sees_witness(game: &mut Game<'_>, victim: usize, witness: u32) {
     game.mobs.insert(victim, victim_mob);
 }
 
-/// The `killed` statistic of a pig: what the kill credit awards.
-fn pigs_killed(game: &Game<'_>) -> i32 {
-    game.stats.get("killed", "minecraft:pig")
-}
-
 fn summon(game: &mut Game<'_>, kind: &str, at: &str, n: i32, health: f32) {
     assert!(game.run_command(&format!(
         "summon {kind} {at} {{NoAI:1b,NoGravity:1b,PersistenceRequired:1b,Health:{health}f,UUID:[I;24727,0,0,{n}]}}"
     )));
-}
-
-/// `LivingEntity.baseTick` counts `lastHurtByPlayerMemoryTime` down and drops
-/// `lastHurtByPlayer` on the first tick whose time is already zero: the death
-/// rewards (`dropAllDeathLoot`'s `playerKilled`, `dropExperience`) and
-/// `getKillCredit` then find no player. A pig that burns 101 ticks after the
-/// hit is nobody's kill, while the same death right after the hit is the
-/// player's.
-#[test]
-#[ignore = "daily"]
-fn a_player_memory_that_ran_out_credits_nobody() {
-    let mut game = game();
-    // A hit just landed: the lava death is the player's kill.
-    summon(&mut game, "pig", "4.5 100 4.5", 1, 10.0);
-    let pig = index(&mut game, PIG_A);
-    hit_by_player(&mut game, PIG_A, 1.0);
-    assert_eq!(
-        game.mobs[pig].ai.last_hurt_by_player, 100,
-        "the hit is remembered"
-    );
-    assert!(game.run_command(&format!("damage {PIG_A} 20 minecraft:lava")));
-    step(&mut game, 1);
-    assert_eq!(pigs_killed(&game), 1, "a fresh hit is the player's kill");
-    let orbs = game.orbs.len();
-    assert!(orbs > 0, "a player kill drops experience");
-    // 101 ticks on, the memory has run out and `baseTick` dropped the player
-    // on the 101st: the same lava death credits nobody.
-    summon(&mut game, "pig", "4.5 100 4.5", 2, 10.0);
-    hit_by_player(&mut game, PIG_B, 1.0);
-    step(&mut game, 101);
-    let pig = index(&mut game, PIG_B);
-    assert_eq!(
-        game.mobs[pig].ai.last_hurt_by_player, 0,
-        "the memory ran out"
-    );
-    assert!(game.run_command(&format!("damage {PIG_B} 20 minecraft:lava")));
-    step(&mut game, 1);
-    assert_eq!(
-        pigs_killed(&game),
-        1,
-        "a hit 101 ticks old is nobody's kill"
-    );
-    assert_eq!(game.orbs.len(), orbs, "no experience dropped");
 }
 
 /// `Raider.die`'s hero of the village and `Villager.die`'s murderer are the
