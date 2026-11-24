@@ -130,7 +130,7 @@ pub(super) struct EndState {
     /// Gateway travel belongs to this level's entities, like their portal
     /// states (`Entity.portalProcess`); `Game::swap_level` moves these four
     /// with the level, so a gateway outside the End keeps its own travellers.
-    pub(super) gateways: HashMap<u32, horizon_client::end_gateway::Traveller>,
+    pub(in crate::game) gateways: HashMap<u32, horizon_client::end_gateway::Traveller>,
     /// The entities that went through a gateway, waiting for its exit.
     pub(super) arrivals: Vec<GatewayArrival>,
     /// The chunks kept loaded for those arrivals.
