@@ -1095,6 +1095,18 @@ pub trait PlayersBackendMut {
         pos: [i32; 3],
         original: &ItemStack,
     ) -> Result<(), TriggerCriterionError>;
+    /// Side: server. Fires `minecraft:consume_item` for `player` with `stack`
+    /// (`CriteriaTriggers.CONSUME_ITEM.trigger`).
+    /// An invalid stack returns `Stack(StackWriteError)` before the trigger fires.
+    /// Evaluates vanilla predicates and rewards in the player's own level; never reads inventory.
+    /// `Ok(())` means reached, even if nothing matched. Refuses remote clients (`NotServer`)
+    /// and stale/offline/displaced players (`PlayerUnavailable`).
+    #[access(WorldOnly)]
+    fn player_trigger_consume_item(
+        &mut self,
+        player: PlayerRef,
+        stack: &ItemStack,
+    ) -> Result<(), TriggerCriterionError>;
     /// Side: server.
     /// `Player.setLastDeathLocation`: stores where the player died, or
     /// forgets it for None. The client hears of it with the player's next
@@ -1158,6 +1170,16 @@ pub trait PlayersBackendMut {
     /// held `slot`.
     #[access(WorldOnly)]
     fn player_set_selected_slot(&mut self, player: PlayerRef, slot: usize) -> bool;
+    /// Side: server.
+    /// Makes the player's crafting results again from their grids, as
+    /// `AbstractContainerMenu.slotsChanged` does after a change to a grid, and tells their client:
+    /// for a mod whose `crafting_recipe_choice` answer changed while the grid did not (Polymorph's
+    /// selection packet). Covers the inventory's grid, an open crafting table and an open mod
+    /// crafting menu; the mods' `prepare_item_craft` has its say as after a click. Returns false
+    /// for a stale or unavailable player and one whose state is swapped in for a turn (code
+    /// running in that player's own turn): call it from the next `server_tick` instead.
+    #[access(WorldOnly)]
+    fn player_crafting_changed(&mut self, player: PlayerRef) -> bool;
     /// Side: server.
     /// `Player.drop(stack, false, thrown_by_player)`: `stack` is thrown from the player's eyes
     /// along their view as an item entity, with the main hand swinging and `item_toss` asked
