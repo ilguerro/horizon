@@ -1,0 +1,5 @@
+# Prepared-resource tests for #16973 (compute-random-chance).
+# PACKAGE TEST TARGET daily REASON; exact logical libtest identities, sorted.
+horizon-client game::commands::compute::compute_condition_tests::a_conditional_reads_its_random_chance_provider lib daily resources
+horizon-client game::commands::compute::compute_condition_tests::a_non_finite_binomial_probability_fails_the_command lib daily resources
+horizon-client game::commands::compute::compute_condition_tests::a_self_referencing_random_chance_provider_stops_at_the_depth_guard lib daily resources
