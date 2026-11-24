@@ -46,6 +46,9 @@ fn game() -> Game<'static> {
     )
     .unwrap();
     game.build_registries();
+    // The server's loot tables, which opening a world loads; without them a
+    // death rolls nothing and drops no experience.
+    game.load_server_loot();
     game.set_allow_commands(true);
     game.world
         .chunks
