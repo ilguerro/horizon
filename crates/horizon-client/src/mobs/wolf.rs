@@ -43,21 +43,25 @@ pub fn wears_body(m: &Mob, absorbed: bool) -> bool {
 }
 
 /// The `Wolf.hurtArmor` wear of a hit the armour did not take:
-/// `(int)Math.max(1.0F, damage / 4.0F)`.
+/// `(int)Math.max(1.0F, damage / 4.0F)`. `doHurtEquipment` only wears the
+/// stack: the crack sound and scutes belong to `Wolf.actuallyHurt`'s
+/// absorbed branch alone.
 pub fn wear_body(m: &mut Mob, damage: f32) {
-    wear(m, ((damage / 4.0).max(1.0)) as i32);
+    wear(m, ((damage / 4.0).max(1.0)) as i32, false);
 }
 
 /// `Wolf.actuallyHurt`: the armor loses `ceil(damage)` durability, cracks at
 /// `Crackiness.WOLF_ARMOR` steps and breaks at its maximum.
 pub fn hurt_armor(m: &mut Mob, damage: f32) {
-    wear(m, damage.ceil() as i32);
+    wear(m, damage.ceil() as i32, true);
 }
 
 /// `ItemStack.hurtAndBreak`: the piece loses `amount` durability, cracks at the
 /// `Crackiness.WOLF_ARMOR` steps and breaks at its maximum, where
-/// `LivingEntity.onEquippedItemBroken` reports the slot's break.
-fn wear(m: &mut Mob, amount: i32) {
+/// `LivingEntity.onEquippedItemBroken` reports the slot's break. `cracks`:
+/// whether a crackiness step plays the crack sound and scutes, which only
+/// `Wolf.actuallyHurt` checks.
+fn wear(m: &mut Mob, amount: i32, cracks: bool) {
     let crack = |lost: i32| {
         let left = (WOLF_ARMOR_DURABILITY - lost) as f32 / WOLF_ARMOR_DURABILITY as f32;
         [0.95_f32, 0.69, 0.32].iter().filter(|t| left < **t).count()
@@ -82,7 +86,7 @@ fn wear(m: &mut Mob, amount: i32) {
         }
     } else {
         m.extra.set_body_damage(after);
-        if crack(before) != crack(after) {
+        if cracks && crack(before) != crack(after) {
             m.outbox
                 .push(MobEvent::Sound("item.wolf_armor.crack", at, 1.0, 1.0));
             // Twenty scutes fly off, a block above the wolf's feet.

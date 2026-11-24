@@ -139,3 +139,22 @@ fn a_broken_body_piece_sends_the_body_break_event() {
         m.outbox
     );
 }
+
+/// `Wolf.hurtArmor` -> `doHurtEquipment` has no `Crackiness` check: a thorns
+/// hit that wears the piece past the 95% step (4 of 64 points) plays no crack
+/// sound, which only the absorbed branch of `Wolf.actuallyHurt` plays.
+#[test]
+fn a_hit_the_armour_does_not_take_cracks_it_silently() {
+    let mut test_level = crate::health::TestLevel::new(0);
+    let level = &mut test_level.level();
+    let mut m = wolf();
+    assert!(m.damage(level, 24.0, thorns()), "the hit landed");
+    assert_eq!(m.extra.body_damage(), 6, "past the first crack step");
+    assert!(
+        !m.outbox
+            .iter()
+            .any(|e| matches!(e, MobEvent::Sound("item.wolf_armor.crack", ..))),
+        "no crack sound: {:?}",
+        m.outbox
+    );
+}
