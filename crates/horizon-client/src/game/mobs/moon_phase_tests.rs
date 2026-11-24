@@ -20,10 +20,8 @@ fn slime_chance(game: &Game<'_>) -> f32 {
 }
 
 #[test]
+#[ignore = "daily"]
 fn the_nether_and_the_end_keep_a_full_moon_whatever_the_overworld_clock_says() {
-    if std::env::var_os("HORIZON_TEST_RESOURCES").is_none() {
-        return;
-    }
     let mut game = server_game();
     game.build_registries();
     game.world.health_rules.difficulty = Difficulty::Normal;

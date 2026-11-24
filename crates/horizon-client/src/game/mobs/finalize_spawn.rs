@@ -27,15 +27,11 @@ pub(super) fn biome_or_plains(name: Option<String>) -> String {
 }
 
 impl FinalizeGame<'_, '_> {
-    /// The biome id at a block, when its chunk is loaded.
+    /// The biome `LevelReader.getBiome` reads at a block (its zoom can pick a
+    /// neighbouring quart cell), when that cell's chunk is loaded.
     fn biome_name(&self, pos: [i32; 3]) -> Option<String> {
-        let chunk = self.game.world.chunks.get(&(pos[0] >> 4, pos[2] >> 4))?;
-        Some(
-            world_biomes!(self.game)
-                .get(chunk.biome(pos[0], pos[1], pos[2]))
-                .name
-                .clone(),
-        )
+        let id = self.game.zoomed_biome_id(pos)?;
+        Some(world_biomes!(self.game).get(id).name.clone())
     }
 }
 
@@ -110,9 +106,10 @@ impl finalize::FinalizeLevel for FinalizeGame<'_, '_> {
 }
 
 impl Game<'_> {
-    /// `DimensionType.moonPhase` at the level's day time.
+    /// `EnvironmentAttributes.MOON_PHASE` at the level's day time: the full moon
+    /// where the level's dimension has no `minecraft:moon` timeline.
     pub(super) fn finalize_moon_phase(&self) -> usize {
-        (self.world.day_time.div_euclid(24000).rem_euclid(8)) as usize
+        self.dimension_type().moon_phase(self.world.day_time)
     }
     /// The level's game time (`Level.getDayTime`).
     pub(super) fn finalize_game_time(&self) -> i64 {

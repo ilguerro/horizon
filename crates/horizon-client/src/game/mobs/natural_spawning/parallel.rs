@@ -3,6 +3,7 @@
 //! them, and the server thread then commits what they proposed in the pass's chunk order.
 use super::*;
 use crate::game::creatures::prep;
+use crate::game::structures::structures_reaching_in;
 use horizon_client::mobs::{
     finalize::{self, FinalizeLevel},
     spawn_selection::{self, Lane, Pack},
@@ -103,7 +104,7 @@ impl FinalizeLevel for LaneFinalize<'_, '_> {
         .collect()
     }
     fn moon_phase(&self, _: [i32; 3]) -> usize {
-        (self.l.w.day_time.div_euclid(24000).rem_euclid(8)) as usize
+        self.l.w.dimension_type.moon_phase(self.l.w.day_time)
     }
     fn spawning_monsters(&self) -> bool {
         self.l.host.spawning_monsters
@@ -182,7 +183,11 @@ impl Level<'_, NoGame> {
         } else {
             self.group.borrow().clone()
         };
-        let difficulty = local_difficulty_in(self.w.world, self.w.dimension_type, r.position);
+        let difficulty = super::super::creatures::local_difficulty_in(
+            self.w.world,
+            self.w.dimension_type,
+            r.position,
+        );
         let mut level = LaneFinalize {
             l: self,
             rides: Vec::new(),

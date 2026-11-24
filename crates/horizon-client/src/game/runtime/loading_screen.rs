@@ -164,8 +164,9 @@ impl Loading {
             Some(&self.boot),
             None,
             None,
-            self.settings.horizon.api,
+            self.settings.horizon.effective_api(),
             shader_packs::picked_pack_shape(&self.settings).ray_tracing,
+            self.settings.horizon.ray_tracing,
         ) {
             Ok(r) => self.renderer = Some(r),
             Err(e) => {
@@ -235,8 +236,9 @@ impl Loading {
             Some(&bundle.atlas),
             Some(&bundle.panorama),
             self.renderer.as_ref(),
-            self.settings.horizon.api,
+            self.settings.horizon.effective_api(),
             shader_packs::picked_pack_shape(&self.settings).ray_tracing,
+            self.settings.horizon.ray_tracing,
         ) {
             Ok(r) => {
                 self.renderer = Some(r);
@@ -269,6 +271,21 @@ impl Loading {
             return;
         }
         self.poll_menu_realms(event_loop);
+        if self.title_drawn
+            && self
+                .options
+                .as_ref()
+                .is_some_and(|o| o.benchmark.is_none() && !o.offscreen)
+        {
+            super::graphics_tuning::ready_at_title(&self.vanilla_root, &self.settings);
+        }
+        if let Some((redraw, next)) = super::graphics_tuning::title_redraw() {
+            if redraw && let Some(w) = &self.window {
+                w.request_redraw();
+            }
+            event_loop.set_control_flow(ControlFlow::WaitUntil(next));
+            return;
+        }
         if let Some(w) = &self.window {
             if self.options.as_ref().is_some_and(|o| o.offscreen) {
                 self.draw();
@@ -340,7 +357,7 @@ impl Loading {
                 &gui,
                 previous.as_ref(),
                 loaded.renderer_cpu,
-                self.settings.horizon.api,
+                self.settings.horizon.effective_api(),
                 self.settings.horizon.translucent_batching,
                 self.settings.vsync,
                 &self.settings.horizon,
@@ -406,6 +423,9 @@ impl Loading {
         game.fullscreen = self.fullscreen;
         game.panorama_rotation = self.panorama_rotation;
         self.menu.handoff(&mut game);
+        if game.title.is_some() && game.options.benchmark.is_none() && !game.options.offscreen {
+            super::graphics_tuning::ready_at_title(&self.vanilla_root, &game.settings);
+        }
         game.apply_settings();
         game.previous = Instant::now();
         // Minecraft.onGameLoadFinished: a start that made it this far is clean.

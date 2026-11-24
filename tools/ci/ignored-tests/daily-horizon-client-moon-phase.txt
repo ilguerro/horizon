@@ -1,0 +1,2 @@
+# The moon phase in the Nether and the End uses the prepared server registries.
+horizon-client game::moon_phase_tests::the_nether_and_the_end_keep_a_full_moon_whatever_the_overworld_clock_says lib daily resources
